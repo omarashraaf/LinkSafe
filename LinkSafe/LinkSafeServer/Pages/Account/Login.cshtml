@@ -1,0 +1,27 @@
+@page
+@model LinkSafeServer.Pages.Account.LoginModel
+@{
+    ViewData["Title"] = "Admin Login";
+}
+
+<div class="hero-card narrow-card">
+    <h1>LinkSafe Admin Login</h1>
+    <p>Use the local LinkSafe admin account created during first setup.</p>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Message))
+    {
+        <div class="alert alert-danger">@Model.Message</div>
+    }
+
+    <form method="post" class="grid-form">
+        <label>
+            Username
+            <input asp-for="Input.Username" class="form-control" />
+        </label>
+        <label>
+            Password
+            <input asp-for="Input.Password" class="form-control" type="password" />
+        </label>
+        <button type="submit" class="btn btn-primary">Sign In</button>
+    </form>
+</div>

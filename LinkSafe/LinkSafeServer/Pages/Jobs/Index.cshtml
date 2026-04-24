@@ -1,0 +1,55 @@
+@page
+@model LinkSafeServer.Pages.Jobs.IndexModel
+@{
+    ViewData["Title"] = "Backup Jobs";
+}
+
+<section class="page-grid">
+    <div class="hero-card">
+        <h1>Backup Jobs</h1>
+        <p>Filter and review completed, failed, and in-progress backup packages.</p>
+    </div>
+
+    <form method="get" class="panel-card filter-row">
+        <input asp-for="Username" class="form-control" placeholder="Username" />
+        <input asp-for="ComputerName" class="form-control" placeholder="Computer name" />
+        <input asp-for="Status" class="form-control" placeholder="Status" />
+        <button class="btn btn-primary" type="submit">Filter</button>
+    </form>
+
+    <div class="panel-card">
+        <table class="table table-dark table-striped">
+            <thead>
+            <tr>
+                <th>Job ID</th>
+                <th>User</th>
+                <th>Computer</th>
+                <th>Type</th>
+                <th>Start</th>
+                <th>Finish</th>
+                <th>Status</th>
+                <th>Files</th>
+                <th>Versioned</th>
+                <th>Error</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var job in Model.Jobs)
+            {
+                <tr>
+                    <td>@job.BackupJobId</td>
+                    <td>@job.Username</td>
+                    <td>@job.ComputerName</td>
+                    <td>@job.BackupType</td>
+                    <td>@job.StartedAt.ToLocalTime().ToString("g")</td>
+                    <td>@(job.FinishedAt?.ToLocalTime().ToString("g") ?? "-")</td>
+                    <td>@job.Status</td>
+                    <td>@job.FilesProcessed</td>
+                    <td>@job.FilesVersioned</td>
+                    <td>@job.Error</td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>

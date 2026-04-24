@@ -1,0 +1,5 @@
+E:\LinkSafe\publish\client-agent\appsettings.Development.json
+E:\LinkSafe\publish\client-agent\appsettings.json
+E:\LinkSafe\publish\client-agent\LinkSafeClientAgent.pdb
+E:\LinkSafe\publish\client-agent\Shared.pdb
+E:\LinkSafe\publish\client-agent\LinkSafeClientAgent.exe

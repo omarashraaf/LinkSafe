@@ -1,0 +1,2 @@
+C:\ProgramData\LinkSafeServer\Downloads\LinkSafeClientSetup\LinkSafeClientSetup.pdb
+C:\ProgramData\LinkSafeServer\Downloads\LinkSafeClientSetup\LinkSafeClientSetup.exe

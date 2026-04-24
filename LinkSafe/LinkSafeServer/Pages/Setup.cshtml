@@ -1,0 +1,31 @@
+@page
+@model LinkSafeServer.Pages.SetupModel
+@{
+    ViewData["Title"] = "First Setup";
+}
+
+<div class="hero-card narrow-card">
+    <h1>LinkSafe First Setup</h1>
+    <p>Create the first admin account and initialize the server configuration.</p>
+
+    @if (!string.IsNullOrWhiteSpace(Model.Message))
+    {
+        <div class="alert @(Model.Success ? "alert-success" : "alert-danger")">@Model.Message</div>
+    }
+
+    <form method="post" class="grid-form">
+        <label>
+            Admin username
+            <input asp-for="Input.AdminUsername" class="form-control" />
+        </label>
+        <label>
+            Password
+            <input asp-for="Input.Password" class="form-control" type="password" />
+        </label>
+        <label>
+            Confirm password
+            <input asp-for="Input.ConfirmPassword" class="form-control" type="password" />
+        </label>
+        <button type="submit" class="btn btn-primary">Initialize LinkSafe Server</button>
+    </form>
+</div>

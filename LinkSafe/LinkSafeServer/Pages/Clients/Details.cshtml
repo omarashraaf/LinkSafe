@@ -1,0 +1,52 @@
+@page
+@model LinkSafeServer.Pages.Clients.DetailsModel
+@{
+    ViewData["Title"] = "Client Details";
+}
+
+<div class="page-grid">
+    <div class="hero-card">
+        <h1>@Model.Client?.Username / @Model.Client?.ComputerName</h1>
+        <p>Detailed view of the registered client and its current backup status.</p>
+    </div>
+
+    @if (Model.Client is null)
+    {
+        <div class="alert alert-danger">Client not found.</div>
+    }
+    else
+    {
+        <div class="panel-card">
+            <dl class="details-grid">
+                <dt>Domain user</dt><dd>@Model.Client.DomainUser</dd>
+                <dt>Computer name</dt><dd>@Model.Client.ComputerName</dd>
+                <dt>First registered</dt><dd>@Model.Client.FirstRegisteredAt.ToLocalTime().ToString("g")</dd>
+                <dt>Last seen</dt><dd>@Model.Client.LastSeenAt.ToLocalTime().ToString("g")</dd>
+                <dt>Last backup</dt><dd>@(Model.Client.LastBackupTime?.ToLocalTime().ToString("g") ?? "-")</dd>
+                <dt>Last status</dt><dd>@Model.Client.LastBackupStatus</dd>
+                <dt>Last error</dt><dd>@Model.Client.LastError</dd>
+                <dt>Destination</dt><dd>@Model.Client.BackupDestinationPath</dd>
+            </dl>
+        </div>
+
+        <form method="post" class="panel-card grid-form">
+            <input type="hidden" name="domainUser" value="@Model.Client.DomainUser" />
+            <input type="hidden" name="computerName" value="@Model.Client.ComputerName" />
+
+            <h2>Backup Selection For This Client</h2>
+            <p>These folders override the server default for this machine. Important folders are selected by default.</p>
+
+            <div class="checkbox-grid">
+                @foreach (var folder in Model.FolderOptions)
+                {
+                    <label class="checkbox-item">
+                        <input type="checkbox" name="SelectedFolders" value="@folder" checked="@Model.SelectedFolders.Contains(folder)" />
+                        <span>@folder</span>
+                    </label>
+                }
+            </div>
+
+            <button type="submit" class="btn btn-primary">Save Client Backup Policy</button>
+        </form>
+    }
+</div>

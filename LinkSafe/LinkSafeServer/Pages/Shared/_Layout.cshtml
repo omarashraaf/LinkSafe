@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - LinkSafe</title>
+    <link rel="icon" type="image/x-icon" href="~/icon.ico" />
+    <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
+    <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
+    <link rel="stylesheet" href="~/LinkSafeServer.styles.css" asp-append-version="true" />
+</head>
+<body class="app-shell">
+    <header class="topbar">
+        <div class="brand-lockup">
+            <a class="brand-mark" asp-page="/Index">LinkSafe</a>
+            <span class="brand-subtitle">Secure Windows backup server</span>
+        </div>
+        @if (User.Identity?.IsAuthenticated ?? false)
+        {
+            <nav class="main-nav">
+                <a asp-page="/Index">Dashboard</a>
+                <a asp-page="/Settings">Settings</a>
+                <a asp-page="/Clients/Index">Clients</a>
+                <a asp-page="/Logs/Index">Logs</a>
+                <a asp-page="/Downloads/Index">Downloads</a>
+            </nav>
+            <form method="post" asp-page="/Account/Logout">
+                <button type="submit" class="btn btn-outline-light btn-sm">Sign Out</button>
+            </form>
+        }
+    </header>
+
+    <main class="content-shell">
+        @RenderBody()
+    </main>
+
+    <script src="~/lib/jquery/dist/jquery.min.js"></script>
+    <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="~/js/site.js" asp-append-version="true"></script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

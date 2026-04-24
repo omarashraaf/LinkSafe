@@ -1,0 +1,55 @@
+@page
+@model LinkSafeServer.Pages.Browse.IndexModel
+@{
+    ViewData["Title"] = "Browse Backups";
+}
+
+<section class="page-grid">
+    <div class="hero-card">
+        <h1>Restore / Browse Backups</h1>
+        <p>Admin-only backup browser for inspecting stored client files and downloading items.</p>
+    </div>
+
+    <form method="get" class="panel-card filter-row">
+        <input asp-for="Username" class="form-control" placeholder="Username" />
+        <input asp-for="ComputerName" class="form-control" placeholder="Computer name" />
+        <input asp-for="RelativePath" class="form-control" placeholder="Relative path" />
+        <button class="btn btn-primary" type="submit">Browse</button>
+    </form>
+
+    <div class="panel-card">
+        <p><strong>Current Path:</strong> @Model.RelativePath</p>
+        <table class="table table-dark table-striped">
+            <thead>
+            <tr>
+                <th>Name</th>
+                <th>Type</th>
+                <th>Size</th>
+                <th>Last Modified</th>
+                <th>Action</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var item in Model.Items)
+            {
+                <tr>
+                    <td>@item.Name</td>
+                    <td>@(item.IsDirectory ? "Folder" : "File")</td>
+                    <td>@(item.IsDirectory ? "-" : item.SizeBytes.ToString("N0"))</td>
+                    <td>@item.LastModified.ToLocalTime().ToString("g")</td>
+                    <td>
+                        @if (item.IsDirectory)
+                        {
+                            <a class="btn btn-sm btn-outline-light" asp-page="/Browse/Index" asp-route-username="@Model.Username" asp-route-computerName="@Model.ComputerName" asp-route-relativePath="@item.RelativePath">Open</a>
+                        }
+                        else
+                        {
+                            <a class="btn btn-sm btn-outline-primary" asp-page-handler="Download" asp-route-username="@Model.Username" asp-route-computerName="@Model.ComputerName" asp-route-relativePath="@item.RelativePath">Download</a>
+                        }
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>

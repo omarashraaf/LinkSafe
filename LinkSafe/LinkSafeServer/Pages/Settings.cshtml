@@ -1,0 +1,58 @@
+@page
+@model LinkSafeServer.Pages.SettingsModel
+@{
+    ViewData["Title"] = "Settings";
+}
+
+<div class="page-grid">
+    <div class="hero-card">
+        <h1>Server Settings</h1>
+        <p>Choose where backups are stored, what categories LinkSafe protects, and how often the agent runs.</p>
+        @if (!string.IsNullOrWhiteSpace(Model.Message))
+        {
+            <div class="alert @(Model.Success ? "alert-success" : "alert-danger")">@Model.Message</div>
+        }
+    </div>
+
+    <form method="post" class="panel-card grid-form">
+        <input type="hidden" asp-for="Action" id="Action" />
+
+        <label>Backup storage location <input asp-for="Config.BackupRoot" class="form-control" /></label>
+
+        <div>
+            <h2>Backup Categories</h2>
+            <p>Select the data LinkSafe should protect by default for all clients. Browser profiles are curated so caches are excluded.</p>
+        </div>
+
+        <div class="checkbox-grid">
+            @foreach (var folder in Model.FolderOptions)
+            {
+                <label class="checkbox-item">
+                    <input type="checkbox" name="SelectedFolders" value="@folder" checked="@Model.Config.BackupFolders.Contains(folder)" />
+                    <span>@folder</span>
+                </label>
+            }
+        </div>
+
+        <div class="number-grid">
+            <label>Backup interval minutes <input asp-for="Config.BackupIntervalMinutes" class="form-control" /></label>
+            <label>Watcher delay seconds <input asp-for="Config.DelayBeforeCopySeconds" class="form-control" /></label>
+            <label>Stable file check seconds <input asp-for="Config.StableFileCheckSeconds" class="form-control" /></label>
+        </div>
+
+        <div class="button-row">
+            <button type="submit" class="btn btn-primary" onclick="document.getElementById('Action').value='save'">Save Settings</button>
+            <button type="submit" class="btn btn-outline-light" onclick="document.getElementById('Action').value='permissions'">Apply Secure Storage Permissions</button>
+        </div>
+    </form>
+
+    <div class="panel-card">
+        <h2>Server Paths</h2>
+        <ul class="compact-list">
+            <li>Logs: @Model.ServerLogPath</li>
+            <li>Incoming: @Model.Config.IncomingRoot</li>
+            <li>Quarantine: @Model.Config.QuarantineRoot</li>
+            <li>Versions: @Model.Config.VersionsRoot</li>
+        </ul>
+    </div>
+</div>

@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/LinkSafe/">
+    <Project Path="LinkSafe/LinkSafeServer/LinkSafeServer.csproj" />
+    <Project Path="LinkSafe/Shared/Shared.csproj" />
+  </Folder>
+  <Folder Name="/LinkSafe/LinkSafeClient/">
+    <Project Path="LinkSafe/LinkSafeClient/LinkSafeClientAgent/LinkSafeClientAgent.csproj" />
+    <Project Path="LinkSafe/LinkSafeClient/LinkSafeClientSetup/LinkSafeClientSetup.csproj" />
+  </Folder>
+</Solution>

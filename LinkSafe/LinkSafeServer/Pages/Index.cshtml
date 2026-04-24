@@ -1,0 +1,81 @@
+@page
+@model LinkSafeServer.Pages.IndexModel
+@{
+    ViewData["Title"] = "Dashboard";
+}
+
+<section class="page-grid">
+    <div class="hero-card">
+        <h1>LinkSafe Dashboard</h1>
+        <p>Monitor client health, backup status, and protected storage from one place.</p>
+        <div class="stats-row">
+            <div><span>Status</span><strong>@Model.Summary.ServerStatus</strong></div>
+            <div><span>Backup Root</span><strong>@Model.Summary.BackupRoot</strong></div>
+            <div><span>Total Clients</span><strong>@Model.Summary.TotalRegisteredClients</strong></div>
+            <div><span>Recent Clients</span><strong>@Model.Summary.RecentClients</strong></div>
+        </div>
+    </div>
+
+    <div class="card-grid">
+        <article class="info-card">
+            <h2>Backup Health</h2>
+            <dl>
+                <dt>Failed backups</dt>
+                <dd>@Model.Summary.FailedBackupsCount</dd>
+                <dt>Last backup</dt>
+                <dd>@(Model.Summary.LastBackupTime?.ToLocalTime().ToString("g") ?? "None yet")</dd>
+                <dt>Storage usage</dt>
+                <dd>@Model.StorageUsageDisplay</dd>
+            </dl>
+        </article>
+
+        <article class="info-card">
+            <h2>Recent Errors</h2>
+            @if (Model.Summary.RecentErrors.Count == 0)
+            {
+                <p>No recent errors.</p>
+            }
+            else
+            {
+                <ul class="compact-list">
+                    @foreach (var error in Model.Summary.RecentErrors)
+                    {
+                        <li>@error</li>
+                    }
+                </ul>
+            }
+        </article>
+    </div>
+</section>
+
+<section class="panel-card">
+    <div class="panel-header">
+        <h2>Recent Backup Jobs</h2>
+        <a class="btn btn-outline-primary" asp-page="/Jobs/Index">View All Jobs</a>
+    </div>
+    <table class="table table-dark table-striped">
+        <thead>
+        <tr>
+            <th>Job ID</th>
+            <th>User</th>
+            <th>Computer</th>
+            <th>Type</th>
+            <th>Status</th>
+            <th>Finished</th>
+        </tr>
+        </thead>
+        <tbody>
+        @foreach (var job in Model.Summary.RecentJobs)
+        {
+            <tr>
+                <td>@job.BackupJobId</td>
+                <td>@job.Username</td>
+                <td>@job.ComputerName</td>
+                <td>@job.BackupType</td>
+                <td>@job.Status</td>
+                <td>@(job.FinishedAt?.ToLocalTime().ToString("g") ?? "-")</td>
+            </tr>
+        }
+        </tbody>
+    </table>
+</section>

@@ -1,0 +1,61 @@
+@page
+@model LinkSafeServer.Pages.Clients.IndexModel
+@{
+    ViewData["Title"] = "Clients";
+}
+
+<section class="page-grid">
+    <div class="hero-card">
+        <h1>Registered Clients</h1>
+        <p>Track agent status, disable clients, and inspect each backup destination.</p>
+    </div>
+
+    <div class="panel-card">
+        <table class="table table-dark table-striped">
+            <thead>
+            <tr>
+                <th>Username</th>
+                <th>Domain User</th>
+                <th>Computer</th>
+                <th>Version</th>
+                <th>Last Seen</th>
+                <th>Last Backup</th>
+                <th>Status</th>
+                <th>Destination</th>
+                <th>Actions</th>
+            </tr>
+            </thead>
+            <tbody>
+            @foreach (var client in Model.Clients)
+            {
+                <tr>
+                    <td>@client.Username</td>
+                    <td>@client.DomainUser</td>
+                    <td>@client.ComputerName</td>
+                    <td>@client.AgentVersion</td>
+                    <td>@client.LastSeenAt.ToLocalTime().ToString("g")</td>
+                    <td>@(client.LastBackupTime?.ToLocalTime().ToString("g") ?? "-")</td>
+                    <td>@client.LastBackupStatus</td>
+                    <td>@client.BackupDestinationPath</td>
+                    <td>
+                        <div class="table-actions">
+                            <a class="btn btn-sm btn-outline-light" asp-page="/Clients/Details" asp-route-domainUser="@client.DomainUser" asp-route-computerName="@client.ComputerName">Details</a>
+                            <form method="post" asp-page-handler="Toggle" class="inline-form">
+                                <input type="hidden" name="domainUser" value="@client.DomainUser" />
+                                <input type="hidden" name="computerName" value="@client.ComputerName" />
+                                <input type="hidden" name="disabled" value="@(!client.IsDisabled)" />
+                                <button type="submit" class="btn btn-sm btn-outline-warning">@(client.IsDisabled ? "Enable" : "Disable")</button>
+                            </form>
+                            <form method="post" asp-page-handler="Remove" class="inline-form">
+                                <input type="hidden" name="domainUser" value="@client.DomainUser" />
+                                <input type="hidden" name="computerName" value="@client.ComputerName" />
+                                <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
+                            </form>
+                        </div>
+                    </td>
+                </tr>
+            }
+            </tbody>
+        </table>
+    </div>
+</section>
