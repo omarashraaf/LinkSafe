@@ -1,3 +1,0 @@
-E:\LinkSafe\publish\client-setup\LinkSafeClientSetup.pdb
-E:\LinkSafe\publish\client-setup\Shared.pdb
-E:\LinkSafe\publish\client-setup\LinkSafeClientSetup.exe

@@ -7,7 +7,8 @@ public sealed class DownloadCatalogService(ServerConfigService serverConfigServi
     private readonly FileExtensionContentTypeProvider _contentTypeProvider = new();
     private const string TemplateSetupName = "LinkSafeClientSetup.exe";
     private const string TemplateAgentName = "LinkSafeClientAgent.exe";
-    private const string GeneratedSetupName = "LinkSafeClientSetup-Generated.exe";
+    private const string GeneratedSetupPrefix = "LinkSafeClientSetup-";
+    private const string GeneratedSetupSuffix = ".exe";
 
     public string DownloadsRoot => @"C:\ProgramData\LinkSafeServer\Downloads";
 
@@ -17,7 +18,7 @@ public sealed class DownloadCatalogService(ServerConfigService serverConfigServi
 
         return Directory.EnumerateFiles(DownloadsRoot)
             .Select(path => new FileInfo(path))
-            .Where(file => file.Name.Equals(GeneratedSetupName, StringComparison.OrdinalIgnoreCase))
+            .Where(file => IsGeneratedSetupName(file.Name))
             .OrderByDescending(file => file.LastWriteTimeUtc)
             .Select(file => new DownloadItem(
                 file.Name,
@@ -57,9 +58,8 @@ public sealed class DownloadCatalogService(ServerConfigService serverConfigServi
         }
 
         var normalizedServerUrl = await NormalizeServerUrlAsync(serverUrl, cancellationToken);
+        var outputName = BuildGeneratedSetupName(normalizedServerUrl);
         CleanupGeneratedFiles();
-
-        var outputName = GeneratedSetupName;
         var outputPath = Path.Combine(DownloadsRoot, outputName);
 
         File.Copy(templateExe, outputPath, true);
@@ -71,10 +71,12 @@ public sealed class DownloadCatalogService(ServerConfigService serverConfigServi
 
     public void DeleteGeneratedSetup()
     {
-        var path = Path.Combine(DownloadsRoot, GeneratedSetupName);
-        if (File.Exists(path))
+        foreach (var file in Directory.EnumerateFiles(DownloadsRoot))
         {
-            File.Delete(path);
+            if (IsGeneratedSetupName(Path.GetFileName(file)))
+            {
+                TryDeleteFile(file);
+            }
         }
     }
 
@@ -116,6 +118,21 @@ public sealed class DownloadCatalogService(ServerConfigService serverConfigServi
                 TryDeleteFile(file);
             }
         }
+    }
+
+    private static bool IsGeneratedSetupName(string fileName) =>
+        fileName.StartsWith(GeneratedSetupPrefix, StringComparison.OrdinalIgnoreCase) &&
+        fileName.EndsWith(GeneratedSetupSuffix, StringComparison.OrdinalIgnoreCase);
+
+    private static string BuildGeneratedSetupName(string normalizedServerUrl)
+    {
+        if (Uri.TryCreate(normalizedServerUrl, UriKind.Absolute, out var uri))
+        {
+            var host = uri.Host.Replace(':', '-');
+            return $"{GeneratedSetupPrefix}{host}-p{uri.Port}{GeneratedSetupSuffix}";
+        }
+
+        return $"{GeneratedSetupPrefix}Generated-p5055{GeneratedSetupSuffix}";
     }
 
     private static void TryDeleteFile(string filePath)

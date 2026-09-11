@@ -2,25 +2,31 @@ using System.IO.Compression;
 using System.Text.Json;
 using Shared.Constants;
 using Shared.Models;
+using Shared.Storage;
 
 namespace LinkSafeClientAgent.Services;
 
 public sealed class BackupPackageBuilder(
     FolderMappingService folderMappingService,
     ClientIdentityService clientIdentityService,
-    ILogger<BackupPackageBuilder> logger)
+    ILogger<BackupPackageBuilder> logger,
+    string? queueDirectory = null)
 {
-    public async Task<QueuePackageRecord?> CreateFullBackupAsync(ClientAgentConfig config, CancellationToken cancellationToken)
+    private static readonly DateTimeOffset MinZipTimestamp = new(new DateTime(1980, 1, 1, 0, 0, 0, DateTimeKind.Local));
+    private static readonly DateTimeOffset MaxZipTimestamp = new(new DateTime(2107, 12, 31, 23, 59, 58, DateTimeKind.Local));
+
+    public async Task<QueuePackageRecord?> CreateFullBackupAsync(ClientAgentConfig config, CancellationToken cancellationToken,
+        Func<string, int?, Task>? reportProgress = null)
     {
         var folderMap = folderMappingService.GetBackupFolders(config);
-        var files = EnumerateCandidateFiles(config, folderMap).ToList();
-        var directories = EnumerateCandidateDirectories(config, folderMap).ToList();
+        var files = await CollectCandidatesAsync(EnumerateCandidateFiles(config, folderMap, cancellationToken: cancellationToken), reportProgress, cancellationToken);
+        var directories = await CollectCandidatesAsync(EnumerateCandidateDirectories(config, folderMap, cancellationToken), reportProgress, cancellationToken);
         logger.LogInformation(
             "Preparing full backup package from {FolderCount} folders with {CandidateCount} candidate files and {DirectoryCount} directories.",
             folderMap.Count,
             files.Count,
             directories.Count);
-        return await CreatePackageAsync(config, folderMap, files, directories, "Full", cancellationToken);
+        return await CreatePackageAsync(config, folderMap, files, directories, "Full", cancellationToken, reportProgress);
     }
 
     public async Task<QueuePackageRecord?> CreateIncrementalBackupAsync(
@@ -44,36 +50,61 @@ public sealed class BackupPackageBuilder(
         DateTimeOffset? lastSuccessfulBackup,
         IReadOnlyDictionary<string, BackupFileStateEntry> backupState,
         IReadOnlyCollection<string> prioritizedFiles,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, int?, Task>? reportProgress = null)
     {
         if (lastSuccessfulBackup is null || backupState.Count == 0)
         {
-            return await CreateFullBackupAsync(config, cancellationToken);
+            return await CreateFullBackupAsync(config, cancellationToken, reportProgress);
         }
 
         var folderMap = folderMappingService.GetBackupFolders(config);
         var recentFiles = EnumerateCandidateFiles(config, folderMap, file =>
         {
             var snapshot = SafeGetSnapshot(file);
+            if (snapshot is not null && TryGetEntryPath(file, folderMap, out var entryPath))
+                snapshot.ArchiveEntryPath = entryPath;
             return snapshot is not null && IsNewOrChanged(snapshot, backupState);
-        });
+        }, cancellationToken);
 
         var allowedPrioritizedFiles = prioritizedFiles
             .Where(File.Exists)
             .Where(path => TryGetEntryPath(path, folderMap, out _))
             .ToList();
 
-        var files = allowedPrioritizedFiles
-            .Concat(recentFiles)
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .ToList();
+        var files = await CollectCandidatesAsync(allowedPrioritizedFiles.Concat(recentFiles), reportProgress, cancellationToken);
+        var directories = await CollectCandidatesAsync(
+            EnumerateCandidateDirectories(config, folderMap, cancellationToken).Where(path =>
+                TryGetEntryPath(path, folderMap, out var entryPath) &&
+                (!backupState.TryGetValue(path, out var previous) || !previous.IsDirectory ||
+                 !string.Equals(previous.ArchiveEntryPath, entryPath, StringComparison.OrdinalIgnoreCase))),
+            reportProgress, cancellationToken);
 
         logger.LogInformation(
             "Preparing smart backup package with {CandidateCount} candidate files using {StateCount} confirmed state records.",
             files.Count,
             backupState.Count);
 
-        return await CreatePackageAsync(config, folderMap, files, directories: [], "Incremental", cancellationToken);
+        return await CreatePackageAsync(config, folderMap, files, directories, "Incremental", cancellationToken, reportProgress);
+    }
+
+    private static async Task<List<string>> CollectCandidatesAsync(IEnumerable<string> candidates,
+        Func<string, int?, Task>? reportProgress, CancellationToken cancellationToken)
+    {
+        var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var nextReport = DateTime.UtcNow;
+        if (reportProgress is not null) await reportProgress("Scanning selected user folders and additional drives...", null);
+        foreach (var file in candidates)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            files.Add(file);
+            if (reportProgress is not null && DateTime.UtcNow >= nextReport)
+            {
+                await reportProgress($"Scanning: {files.Count:N0} eligible items found...", null);
+                nextReport = DateTime.UtcNow.AddSeconds(1);
+            }
+        }
+        return files.ToList();
     }
 
     private async Task<QueuePackageRecord?> CreatePackageAsync(
@@ -82,23 +113,28 @@ public sealed class BackupPackageBuilder(
         IReadOnlyCollection<string> files,
         IReadOnlyCollection<string> directories,
         string backupType,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken,
+        Func<string, int?, Task>? reportProgress = null)
     {
         if (files.Count == 0 && directories.Count == 0)
         {
             return null;
         }
 
-        Directory.CreateDirectory(LinkSafeDefaults.ClientQueueDirectory);
+        var packageDirectory = queueDirectory ?? LinkSafeDefaults.ClientQueueDirectory;
+        Directory.CreateDirectory(packageDirectory);
 
         var identity = clientIdentityService.GetCurrent();
         var backupJobId = Guid.NewGuid().ToString("D");
-        var zipPath = Path.Combine(LinkSafeDefaults.ClientQueueDirectory, $"{DateTime.UtcNow:yyyyMMddHHmmss}_{backupJobId}.zip");
+        var zipPath = Path.Combine(packageDirectory, $"{DateTime.UtcNow:yyyyMMddHHmmss}_{backupJobId}.zip");
         var startedAt = DateTimeOffset.UtcNow;
         long totalSizeBytes = 0;
         var includedFolders = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var includedFiles = new List<BackupFileStateEntry>();
         var fileCount = 0;
+        var directoryCount = 0;
+        long directoryHeaderBytes = 0;
+        var maxPackageBytes = Math.Max(1, config.MaxUploadSizeMB) * 1024L * 1024L;
 
         try
         {
@@ -109,15 +145,35 @@ public sealed class BackupPackageBuilder(
                     cancellationToken.ThrowIfCancellationRequested();
                     if (TryGetEntryPath(directoryPath, folderMap, out var directoryEntryPath))
                     {
+                        if (!Directory.Exists(directoryPath) ||
+                            (File.GetAttributes(directoryPath) & FileAttributes.ReparsePoint) != 0) continue;
                         var normalizedDirectoryEntryPath = directoryEntryPath.TrimEnd('/') + "/";
+                        var headerBytes = 128L + 2 * System.Text.Encoding.UTF8.GetByteCount(normalizedDirectoryEntryPath);
+                        // Bound directory-only packages; confirmed entries are skipped by the next scan.
+                        if (directoryCount >= 2000 || directoryHeaderBytes + headerBytes > maxPackageBytes / 2) break;
                         archive.CreateEntry(normalizedDirectoryEntryPath, CompressionLevel.Fastest);
+                        directoryCount++;
+                        directoryHeaderBytes += headerBytes;
+                        includedFiles.Add(new BackupFileStateEntry
+                        {
+                            SourcePath = directoryPath, ArchiveEntryPath = directoryEntryPath,
+                            IsDirectory = true, ConfirmedAt = DateTimeOffset.UtcNow
+                        });
                         includedFolders.Add(normalizedDirectoryEntryPath.Split('/')[0]);
                     }
                 }
 
+                var examined = 0;
+                var nextProgress = DateTime.UtcNow;
                 foreach (var filePath in files)
                 {
                     cancellationToken.ThrowIfCancellationRequested();
+                    examined++;
+                    if (reportProgress is not null && DateTime.UtcNow >= nextProgress)
+                    {
+                        await reportProgress($"Packaging file {examined:N0} of {files.Count:N0}: {Path.GetFileName(filePath)}", (examined - 1) * 100 / Math.Max(1, files.Count));
+                        nextProgress = DateTime.UtcNow.AddSeconds(1);
+                    }
 
                     if (!TryGetEntryPath(filePath, folderMap, out var entryPath))
                     {
@@ -130,16 +186,35 @@ public sealed class BackupPackageBuilder(
                         continue;
                     }
 
+                    if (info.Length > maxPackageBytes)
+                    {
+                        logger.LogWarning(
+                            "Skipping file {FilePath} because its size of {FileSizeBytes} bytes exceeds the configured upload size limit.",
+                            filePath,
+                            info.Length);
+                        continue;
+                    }
+
+                    if (fileCount > 0 && totalSizeBytes + info.Length > maxPackageBytes)
+                    {
+                        logger.LogInformation(
+                            "Stopping package growth at {CurrentSizeBytes} bytes so the backup remains within the configured upload size.",
+                            totalSizeBytes);
+                        break;
+                    }
+
                     try
                     {
                         await using var source = File.Open(filePath, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
                         var entry = archive.CreateEntry(entryPath, CompressionLevel.Optimal);
-                        entry.LastWriteTime = info.LastWriteTime;
+                        entry.LastWriteTime = ClampZipTimestamp(info.LastWriteTime);
                         await using var entryStream = entry.Open();
                         await source.CopyToAsync(entryStream, cancellationToken);
                         totalSizeBytes += info.Length;
                         fileCount++;
-                        includedFiles.Add(CreateSnapshot(info));
+                        var snapshot = CreateSnapshot(info);
+                        snapshot.ArchiveEntryPath = entryPath;
+                        includedFiles.Add(snapshot);
                         includedFolders.Add(entryPath.Split('/')[0]);
                     }
                     catch (UnauthorizedAccessException ex)
@@ -152,9 +227,10 @@ public sealed class BackupPackageBuilder(
                     }
                 }
 
-                if (fileCount == 0 && directories.Count == 0)
+                if (fileCount == 0 && directoryCount == 0)
                 {
                     logger.LogWarning("Backup package {PackagePath} contained no eligible files and will be discarded.", zipPath);
+                    archive.Dispose();
                     TryDeletePackage(zipPath);
                     return null;
                 }
@@ -165,7 +241,7 @@ public sealed class BackupPackageBuilder(
                     Username = identity.Username,
                     Domain = identity.Domain,
                     ComputerName = identity.ComputerName,
-                    AgentVersion = "1.0.0",
+                    AgentVersion = "1.0.16",
                     BackupJobId = backupJobId,
                     BackupType = backupType,
                     BackupStartedAt = startedAt,
@@ -192,7 +268,7 @@ public sealed class BackupPackageBuilder(
             Username = identity.Username,
             Domain = identity.Domain,
             ComputerName = identity.ComputerName,
-            AgentVersion = "1.0.0",
+            AgentVersion = "1.0.16",
             BackupJobId = backupJobId,
             BackupType = backupType,
             BackupStartedAt = startedAt,
@@ -203,10 +279,11 @@ public sealed class BackupPackageBuilder(
         });
 
         logger.LogInformation(
-            "Created {BackupType} backup package {PackagePath} with {FileCount} files and {TotalSizeBytes} bytes.",
+            "Created {BackupType} backup package {PackagePath} with {FileCount} files, {DirectoryCount} folders and {TotalSizeBytes} bytes.",
             backupType,
             zipPath,
             fileCount,
+            directoryCount,
             totalSizeBytes);
 
         return new QueuePackageRecord
@@ -222,7 +299,8 @@ public sealed class BackupPackageBuilder(
     private IEnumerable<string> EnumerateCandidateFiles(
         ClientAgentConfig config,
         IReadOnlyDictionary<string, string> folderMap,
-        Func<string, bool>? additionalFilter = null)
+        Func<string, bool>? additionalFilter = null,
+        CancellationToken cancellationToken = default)
     {
         foreach (var (_, folderPath) in folderMap)
         {
@@ -231,8 +309,9 @@ public sealed class BackupPackageBuilder(
                 continue;
             }
 
-            foreach (var filePath in EnumerateFilesSafely(folderPath))
+            foreach (var filePath in EnumerateFilesSafely(folderPath, config, cancellationToken))
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var info = new FileInfo(filePath);
                 if (ShouldIncludeFile(config, info) && (additionalFilter is null || additionalFilter(filePath)))
                 {
@@ -244,7 +323,8 @@ public sealed class BackupPackageBuilder(
 
     private IEnumerable<string> EnumerateCandidateDirectories(
         ClientAgentConfig config,
-        IReadOnlyDictionary<string, string> folderMap)
+        IReadOnlyDictionary<string, string> folderMap,
+        CancellationToken cancellationToken)
     {
         foreach (var (_, folderPath) in folderMap)
         {
@@ -253,7 +333,7 @@ public sealed class BackupPackageBuilder(
                 continue;
             }
 
-            foreach (var directoryPath in EnumerateDirectoriesSafely(folderPath))
+            foreach (var directoryPath in EnumerateDirectoriesSafely(folderPath, config, cancellationToken))
             {
                 if (!IsExcludedByDirectoryRule(config, directoryPath))
                 {
@@ -265,14 +345,18 @@ public sealed class BackupPackageBuilder(
 
     private bool ShouldIncludeFile(ClientAgentConfig config, FileInfo info)
     {
+        if (info.Name.StartsWith(".linksafe-restore-", StringComparison.OrdinalIgnoreCase)) return false;
         try
         {
-            if (!info.Exists)
+            if (!info.Exists || (info.Attributes & FileAttributes.ReparsePoint) != 0)
             {
                 return false;
             }
 
-            if (info.Length > config.MaxFileSizeMB * 1024L * 1024L)
+            var maxSingleFileBytes = Math.Min(
+                Math.Max(1, config.MaxFileSizeMB) * 1024L * 1024L,
+                Math.Max(1, config.MaxUploadSizeMB) * 1024L * 1024L);
+            if (info.Length > maxSingleFileBytes)
             {
                 return false;
             }
@@ -298,7 +382,29 @@ public sealed class BackupPackageBuilder(
 
     private static bool IsExcludedByDirectoryRule(ClientAgentConfig config, string path)
     {
+        var fullPath = Path.GetFullPath(path);
+        var programData = Environment.GetFolderPath(Environment.SpecialFolder.CommonApplicationData);
+        var protectedPaths = config.ProtectedSourcePaths.Concat(new[]
+        {
+            LinkSafeDefaults.ClientDataRoot,
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "Programs", "LinkSafeClient"),
+            Path.Combine(programData, "LinkSafeAgent"),
+            Path.Combine(programData, "LinkSafeServer"),
+            Environment.GetFolderPath(Environment.SpecialFolder.Windows),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles),
+            Environment.GetFolderPath(Environment.SpecialFolder.ProgramFilesX86),
+            AppContext.BaseDirectory
+        });
+        if (protectedPaths.Where(root => !string.IsNullOrWhiteSpace(root))
+            .Any(root => BackupSourcePaths.IsWithin(fullPath, root)))
+            return true;
+        var leaf = Path.GetFileName(fullPath);
+        if (new[] { "pagefile.sys", "hiberfil.sys", "swapfile.sys" }.Contains(leaf, StringComparer.OrdinalIgnoreCase))
+            return true;
         var segments = path.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        if (segments.Any(segment => segment.Equals("$RECYCLE.BIN", StringComparison.OrdinalIgnoreCase) ||
+                                    segment.Equals("System Volume Information", StringComparison.OrdinalIgnoreCase)))
+            return true;
         foreach (var excluded in config.ExcludeDirectories.Where(item => !string.IsNullOrWhiteSpace(item)))
         {
             var excludedSegments = excluded.Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
@@ -374,19 +480,21 @@ public sealed class BackupPackageBuilder(
         return false;
     }
 
-    private IEnumerable<string> EnumerateFilesSafely(string rootPath)
+    private IEnumerable<string> EnumerateFilesSafely(string rootPath, ClientAgentConfig config, CancellationToken cancellationToken)
     {
         var pending = new Stack<string>();
         pending.Push(rootPath);
 
         while (pending.Count > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var currentPath = pending.Pop();
+            if (IsExcludedByDirectoryRule(config, currentPath)) continue;
 
             IEnumerable<string> files = [];
             try
             {
-                files = Directory.EnumerateFiles(currentPath);
+                files = Directory.GetFiles(currentPath);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -405,7 +513,7 @@ public sealed class BackupPackageBuilder(
             IEnumerable<string> directories = [];
             try
             {
-                directories = Directory.EnumerateDirectories(currentPath);
+                directories = Directory.GetDirectories(currentPath);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -444,18 +552,20 @@ public sealed class BackupPackageBuilder(
         }
     }
 
-    private IEnumerable<string> EnumerateDirectoriesSafely(string rootPath)
+    private IEnumerable<string> EnumerateDirectoriesSafely(string rootPath, ClientAgentConfig config, CancellationToken cancellationToken)
     {
         var pending = new Stack<string>();
         pending.Push(rootPath);
 
         while (pending.Count > 0)
         {
+            cancellationToken.ThrowIfCancellationRequested();
             var currentPath = pending.Pop();
+            if (IsExcludedByDirectoryRule(config, currentPath)) continue;
             IEnumerable<string> directories = [];
             try
             {
-                directories = Directory.EnumerateDirectories(currentPath);
+                directories = Directory.GetDirectories(currentPath);
             }
             catch (UnauthorizedAccessException ex)
             {
@@ -547,7 +657,24 @@ public sealed class BackupPackageBuilder(
             return true;
         }
 
-        return confirmed.Length != current.Length ||
-            confirmed.LastWriteTimeUtc != current.LastWriteTimeUtc;
+        return confirmed.IsDirectory != current.IsDirectory || confirmed.Length != current.Length ||
+            confirmed.LastWriteTimeUtc != current.LastWriteTimeUtc ||
+            !string.Equals(confirmed.ArchiveEntryPath, current.ArchiveEntryPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static DateTimeOffset ClampZipTimestamp(DateTime value)
+    {
+        var timestamp = new DateTimeOffset(value);
+        if (timestamp < MinZipTimestamp)
+        {
+            return MinZipTimestamp;
+        }
+
+        if (timestamp > MaxZipTimestamp)
+        {
+            return MaxZipTimestamp;
+        }
+
+        return timestamp;
     }
 }

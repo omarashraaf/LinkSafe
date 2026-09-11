@@ -4,18 +4,18 @@
     ViewData["Title"] = "Logs";
 }
 
-<section class="page-grid">
+<section class="page-grid" data-live-url="@Url.Page("/Logs/Index", new { live = 1 })">
     <div class="hero-card">
         <h1>Server Logs</h1>
         <p>Review recent LinkSafe server events and download the current log file.</p>
         <div class="button-row">
-            <a class="btn btn-primary" asp-page="/Logs/Index">Refresh</a>
+            <span class="small muted" data-live-status role="status">Connecting to live updates...</span>
             <a class="btn btn-outline-light" asp-page-handler="Download">Download Log File</a>
         </div>
     </div>
 
     <div class="panel-card">
         <p><strong>Log file:</strong> @Model.LogFilePath</p>
-        <pre class="log-viewer">@string.Join(Environment.NewLine, Model.Lines)</pre>
+        <pre class="log-viewer" data-live-region="logs">@string.Join(Environment.NewLine, Model.Lines)</pre>
     </div>
 </section>

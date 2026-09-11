@@ -7,6 +7,12 @@ public sealed class Worker(BackupCoordinator coordinator, ILogger<Worker> logger
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         logger.LogInformation("LinkSafe client agent started.");
-        await coordinator.RunAsync(stoppingToken);
+        try { await coordinator.RunAsync(stoppingToken); }
+        catch (Exception) when (!stoppingToken.IsCancellationRequested)
+        {
+            // Task Scheduler retries only failed processes, not a successful host shutdown.
+            Environment.ExitCode = 1;
+            throw;
+        }
     }
 }

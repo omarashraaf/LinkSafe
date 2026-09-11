@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="LinkSafe.Payload.zip" Condition="'$(PayloadPath)' != ''" />
+    <Compile Include="../../Installer/LinkSafeServerSetup/Payload.cs" Link="Payload.cs" />
+    <Compile Include="../../Installer/LinkSafeServerSetup/SetupForm.cs" Link="SetupForm.cs" />
+  </ItemGroup>
+</Project>

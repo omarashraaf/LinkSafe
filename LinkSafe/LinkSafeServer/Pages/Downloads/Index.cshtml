@@ -6,20 +6,22 @@
 
 <section class="page-grid">
     <div class="hero-card">
-        <h1>Client Downloads</h1>
-        <p>Enter only the server IP. LinkSafe will generate one preconfigured setup EXE, download it immediately, and remove that generated copy after the download finishes.</p>
+        <h1>Connect another computer</h1>
+        <p>One setup app. Your server address already included.</p>
     </div>
 
     <form method="post" asp-page-handler="Generate" class="panel-card grid-form">
+        <h2>Create an agent setup</h2>
         <label>
-            Server IP to embed in the setup file
+            Server IP address
             <input asp-for="ServerIp" class="form-control" placeholder="10.0.0.102" />
         </label>
 
         <div class="button-row">
-            <button type="submit" class="btn btn-primary">Generate And Download Setup EXE</button>
+            <button type="submit" class="btn btn-primary">Download setup EXE</button>
         </div>
 
-        <p>The downloaded setup app already knows the full server URL and will fetch the agent automatically in the background when the user clicks enable.</p>
+        <p class="helper">Enter only the IP, not http:// or a port. The generated copy is removed from the server after the download finishes.</p>
     </form>
+    <section class="panel-card"><h2>On the new computer</h2><ol class="step-list"><li><strong>Open the setup app</strong>The server address is already configured.</li><li><strong>Test the connection</strong>Make sure the computer can reach your server.</li><li><strong>Enable the agent</strong>The agent is downloaded in the background and begins protecting the selected folders.</li></ol></section>
 </section>

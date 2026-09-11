@@ -9,3 +9,26 @@ node_modules/
 dist/
 build/
 *.log
+
+# Reproducible build outputs and local test fixtures.
+**/bin/
+**/obj/
+artifacts/
+.vs/
+.idea/
+*.user
+*.suo
+TestResults/
+coverage/
+
+# Machine-specific secrets and runtime stores are not source files.
+server-config.json
+client-agent-config.json
+registered-clients.json
+backup-jobs.json
+user-folder-map.json
+remote-backup-requests.json
+DataProtectionKeys/
+*.pfx
+*.p12
+*.key

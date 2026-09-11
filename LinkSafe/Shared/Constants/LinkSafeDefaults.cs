@@ -11,14 +11,18 @@ public static class LinkSafeDefaults
     public const string ServerLogFilePath = @"C:\ProgramData\LinkSafeServer\Logs\backup-server.log";
     public const string ServerDataProtectionKeysDirectory = @"C:\ProgramData\LinkSafeServer\DataProtectionKeys";
 
-    public const string ClientConfigPath = @"C:\ProgramData\LinkSafeAgent\client-agent-config.json";
-    public const string ClientStatusPath = @"C:\ProgramData\LinkSafeAgent\status.json";
-    public const string ClientQueuePath = @"C:\ProgramData\LinkSafeAgent\queue.json";
-    public const string ClientBackupStatePath = @"C:\ProgramData\LinkSafeAgent\backup-state.json";
-    public const string ClientQueueDirectory = @"C:\ProgramData\LinkSafeAgent\Queue";
-    public const string ClientRestoreDirectory = @"C:\ProgramData\LinkSafeAgent\Restore";
-    public const string ClientLogsDirectory = @"C:\ProgramData\LinkSafeAgent\Logs";
-    public const string ClientLogFilePath = @"C:\ProgramData\LinkSafeAgent\Logs\backup-agent.log";
+    public const string LegacyClientRoot = @"C:\ProgramData\LinkSafeAgent";
+    public static string ClientDataRoot => Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "LinkSafeAgent");
+    public static string ClientConfigPath => Path.Combine(ClientDataRoot, "client-agent-config.json");
+    public static string ClientStatusPath => Path.Combine(ClientDataRoot, "status.json");
+    public static string ClientQueuePath => Path.Combine(ClientDataRoot, "queue.json");
+    public static string ClientBackupStatePath => Path.Combine(ClientDataRoot, "backup-state.json");
+    public static string ClientQueueDirectory => Path.Combine(ClientDataRoot, "Queue");
+    public static string ClientRestoreDirectory => Path.Combine(ClientDataRoot, "Restore");
+    public static string ClientLogsDirectory => Path.Combine(ClientDataRoot, "Logs");
+    public static string ClientLogFilePath => Path.Combine(ClientLogsDirectory, "backup-agent.log");
+    public static string ClientRunBackupSignalPath => Path.Combine(ClientDataRoot, "run-backup-now.signal");
+    public static string ClientStopBackupSignalPath => Path.Combine(ClientDataRoot, "stop-backup.signal");
 
     public static readonly string[] DefaultBackupFolders =
     [

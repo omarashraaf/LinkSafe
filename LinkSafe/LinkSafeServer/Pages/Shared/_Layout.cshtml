@@ -1,3 +1,8 @@
+@{
+    var authenticated = User.Identity?.IsAuthenticated ?? false;
+    var currentPage = ViewContext.RouteData.Values["page"]?.ToString() ?? "/Index";
+    var navigation = new[] { ("/Index", "Dashboard", "home"), ("/Clients/Index", "Clients", "computer"), ("/Settings", "Settings", "settings"), ("/Downloads/Index", "Downloads", "download"), ("/Logs/Index", "Logs", "logs") };
+}
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -7,36 +12,31 @@
     <link rel="icon" type="image/x-icon" href="~/icon.ico" />
     <link rel="stylesheet" href="~/lib/bootstrap/dist/css/bootstrap.min.css" />
     <link rel="stylesheet" href="~/css/site.css" asp-append-version="true" />
-    <link rel="stylesheet" href="~/LinkSafeServer.styles.css" asp-append-version="true" />
 </head>
-<body class="app-shell">
-    <header class="topbar">
-        <div class="brand-lockup">
-            <a class="brand-mark" asp-page="/Index">LinkSafe</a>
-            <span class="brand-subtitle">Secure Windows backup server</span>
-        </div>
-        @if (User.Identity?.IsAuthenticated ?? false)
+<body class="app-shell @(authenticated ? "" : "signed-out")">
+    <a class="skip-link" href="#main-content">Skip to content</a>
+    <header class="sidebar">
+        <a class="brand-mark" asp-page="/Index"><span class="brand-symbol" aria-hidden="true"></span>LinkSafe</a>
+        @if (authenticated)
         {
-            <nav class="main-nav">
-                <a asp-page="/Index">Dashboard</a>
-                <a asp-page="/Settings">Settings</a>
-                <a asp-page="/Clients/Index">Clients</a>
-                <a asp-page="/Logs/Index">Logs</a>
-                <a asp-page="/Downloads/Index">Downloads</a>
+            <nav class="main-nav" aria-label="Main navigation">
+                @foreach (var (pagePath, label, icon) in navigation)
+                {
+                    var active = pagePath == "/Index" ? currentPage == pagePath : currentPage.StartsWith(pagePath.Replace("/Index", ""), StringComparison.OrdinalIgnoreCase);
+                    <a asp-page="@pagePath" aria-current="@(active ? "page" : null)"><svg class="icon" aria-hidden="true"><use href="@Url.Content($"~/icons.svg#{icon}")"></use></svg>@label</a>
+                }
             </nav>
-            <form method="post" asp-page="/Account/Logout">
-                <button type="submit" class="btn btn-outline-light btn-sm">Sign Out</button>
-            </form>
+            <div class="sidebar-footer">
+                <span class="muted small">Signed in as</span><strong>@User.Identity?.Name</strong>
+                <form method="post" asp-page="/Account/Logout"><button type="submit" class="signout"><svg class="icon" aria-hidden="true"><use href="@Url.Content("~/icons.svg#exit")"></use></svg>Sign out</button></form>
+            </div>
         }
     </header>
-
-    <main class="content-shell">
-        @RenderBody()
-    </main>
-
+    <main id="main-content" class="content-shell" tabindex="-1">@RenderBody()</main>
     <script src="~/lib/jquery/dist/jquery.min.js"></script>
     <script src="~/lib/bootstrap/dist/js/bootstrap.bundle.min.js"></script>
     <script src="~/js/site.js" asp-append-version="true"></script>
+    <script src="~/js/live.js" asp-append-version="true"></script>
     @await RenderSectionAsync("Scripts", required: false)
 </body>
 </html>

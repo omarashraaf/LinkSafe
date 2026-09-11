@@ -1,0 +1,13 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="LinkSafeClientSetup"><HintPath>../../LinkSafe/LinkSafeClient/LinkSafeClientSetup/bin/$(Configuration)/net10.0-windows/win-x64/LinkSafeClientSetup.dll</HintPath></Reference>
+    <Reference Include="Shared"><HintPath>../../LinkSafe/Shared/bin/$(Configuration)/net10.0/Shared.dll</HintPath></Reference>
+  </ItemGroup>
+</Project>

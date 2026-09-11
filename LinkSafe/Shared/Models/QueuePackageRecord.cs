@@ -9,5 +9,6 @@ public sealed class QueuePackageRecord
     public DateTimeOffset? LastAttemptAt { get; set; }
     public int RetryCount { get; set; }
     public string LastError { get; set; } = string.Empty;
+    // Keep the JSON field name for compatibility; entries can now represent files or directories.
     public List<BackupFileStateEntry> IncludedFiles { get; set; } = [];
 }

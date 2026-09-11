@@ -34,18 +34,20 @@ public sealed class ServerConfigService(ILogger<ServerConfigService> logger)
 
     public ClientPolicyResponse ToClientPolicy(ServerConfig config, RegisteredClientRecord? client = null)
     {
-        var backupFolders = client?.BackupFoldersOverride.Count > 0
-            ? client.BackupFoldersOverride
+        var hasOverride = client is not null && (client.HasBackupPolicyOverride || client.BackupFoldersOverride.Count > 0 || client.CustomFoldersOverride.Count > 0);
+        var backupFolders = hasOverride
+            ? client!.BackupFoldersOverride
             : config.BackupFolders;
 
-        var customFolders = client?.CustomFoldersOverride.Count > 0
-            ? client.CustomFoldersOverride
+        var customFolders = hasOverride
+            ? client!.CustomFoldersOverride
             : config.CustomFolders;
 
         return new ClientPolicyResponse
         {
             BackupFolders = [.. backupFolders],
             CustomFolders = [.. customFolders],
+            ProtectedSourcePaths = [config.BackupRoot],
             ExcludeDirectories = [.. config.ExcludeDirectories],
             ExcludeFiles = [.. config.ExcludeFiles],
             BackupIntervalMinutes = config.BackupIntervalMinutes,
@@ -53,7 +55,7 @@ public sealed class ServerConfigService(ILogger<ServerConfigService> logger)
             StableFileCheckSeconds = config.StableFileCheckSeconds,
             MaxFileSizeMB = config.MaxFileSizeMB,
             MaxUploadSizeMB = config.MaxUploadSizeMB,
-            IsClientOverride = client is not null && (client.BackupFoldersOverride.Count > 0 || client.CustomFoldersOverride.Count > 0)
+            IsClientOverride = hasOverride
         };
     }
 

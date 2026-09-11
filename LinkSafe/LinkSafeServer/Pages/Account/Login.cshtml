@@ -5,8 +5,8 @@
 }
 
 <div class="hero-card narrow-card">
-    <h1>LinkSafe Admin Login</h1>
-    <p>Use the local LinkSafe admin account created during first setup.</p>
+    <h1>Welcome back</h1>
+    <p>Sign in to manage your computers and backups.</p>
 
     @if (!string.IsNullOrWhiteSpace(Model.Message))
     {
@@ -16,11 +16,11 @@
     <form method="post" class="grid-form">
         <label>
             Username
-            <input asp-for="Input.Username" class="form-control" />
+            <input asp-for="Input.Username" class="form-control" autocomplete="username" />
         </label>
         <label>
             Password
-            <input asp-for="Input.Password" class="form-control" type="password" />
+            <input asp-for="Input.Password" class="form-control" type="password" autocomplete="current-password" />
         </label>
         <button type="submit" class="btn btn-primary">Sign In</button>
     </form>

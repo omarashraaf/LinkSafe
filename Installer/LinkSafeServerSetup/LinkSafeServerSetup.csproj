@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>true</PublishSingleFile>
+    <EnableCompressionInSingleFile>true</EnableCompressionInSingleFile>
+    <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>../../LinkSafe/LinkSafeClient/LinkSafeClientSetup/app.ico</ApplicationIcon>
+    <Version>1.0.20</Version>
+    <Product>LinkSafe Server Setup</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <EmbeddedResource Include="../../Scripts/ServerSetup/Manage-LinkSafeServer.ps1" LogicalName="LinkSafe.Manage.ps1" />
+    <EmbeddedResource Include="$(PayloadPath)" LogicalName="LinkSafe.Payload.zip" Condition="'$(PayloadPath)' != ''" />
+  </ItemGroup>
+</Project>

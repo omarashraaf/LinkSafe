@@ -14,8 +14,17 @@ public sealed class StatusFileModel
     public DateTimeOffset? LastOperationFinishedAt { get; set; }
     public string LastOperationStatus { get; set; } = string.Empty;
     public string LastOperationMessage { get; set; } = string.Empty;
+    public string LastOperationRequestId { get; set; } = string.Empty;
+    public string CompletedBackupRequestId { get; set; } = string.Empty;
+    public string CompletedBackupRequestStatus { get; set; } = string.Empty;
+    public string CompletedBackupRequestMessage { get; set; } = string.Empty;
+    public int? BackupProgressPercent { get; set; }
+    public string LastStopRequestId { get; set; } = string.Empty;
     public DateTimeOffset? LastRestoreAt { get; set; }
     public string LastRestoreSourceComputer { get; set; } = string.Empty;
+    public bool AutoRestoreEnabled { get; set; }
+    public bool AskBeforeRestoreEveryTime { get; set; } = true;
+    public string AutoRestoreSourceComputer { get; set; } = string.Empty;
     public DateTimeOffset? LastRestorePromptedAt { get; set; }
     public string LastRestorePromptSourceComputer { get; set; } = string.Empty;
     public string LastError { get; set; } = string.Empty;

@@ -37,7 +37,6 @@ public sealed class SettingsModel(
             .Where(item => !string.IsNullOrWhiteSpace(item))
             .Distinct(StringComparer.OrdinalIgnoreCase)
             .ToList();
-        existingConfig.BackupIntervalMinutes = Config.BackupIntervalMinutes;
         existingConfig.DelayBeforeCopySeconds = Config.DelayBeforeCopySeconds;
         existingConfig.StableFileCheckSeconds = Config.StableFileCheckSeconds;
 

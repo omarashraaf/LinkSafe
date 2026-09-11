@@ -1,5 +1,0 @@
-C:\ProgramData\LinkSafeAgent\publish\appsettings.Development.json
-C:\ProgramData\LinkSafeAgent\publish\appsettings.json
-C:\ProgramData\LinkSafeAgent\publish\LinkSafeClientAgent.pdb
-C:\ProgramData\LinkSafeAgent\publish\Shared.pdb
-C:\ProgramData\LinkSafeAgent\publish\LinkSafeClientAgent.exe

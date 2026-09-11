@@ -10,6 +10,7 @@ using Shared.Models;
 var bootstrapConfig = LoadBootstrapConfig();
 
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseWindowsService(options => options.ServiceName = "LinkSafeServer");
 
 builder.WebHost.UseUrls(bootstrapConfig.ServerUrl);
 
@@ -61,7 +62,9 @@ builder.Services.AddSingleton<PathSanitizer>();
 builder.Services.AddSingleton<BackupJobService>();
 builder.Services.AddSingleton<StorageSecurityService>();
 builder.Services.AddSingleton<ClientRegistryService>();
+builder.Services.AddSingleton<RemoteBackupService>();
 builder.Services.AddSingleton<BackupStorageService>();
+builder.Services.AddSingleton<BackupPresenceService>();
 builder.Services.AddSingleton<RoamingRestoreService>();
 builder.Services.AddSingleton<DashboardService>();
 builder.Services.AddSingleton<LogReaderService>();

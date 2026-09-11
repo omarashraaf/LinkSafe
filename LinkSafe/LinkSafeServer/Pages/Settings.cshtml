@@ -6,38 +6,31 @@
 
 <div class="page-grid">
     <div class="hero-card">
-        <h1>Server Settings</h1>
-        <p>Choose where backups are stored, what categories LinkSafe protects, and how often the agent runs.</p>
+        <h1>Make LinkSafe work for you</h1>
+        <p>Choose where backups are stored and what categories LinkSafe protects. Agents scan at every user logon and upload new or modified files.</p>
         @if (!string.IsNullOrWhiteSpace(Model.Message))
         {
             <div class="alert @(Model.Success ? "alert-success" : "alert-danger")">@Model.Message</div>
         }
     </div>
 
-    <form method="post" class="panel-card grid-form">
+    <form method="post" class="panel-card grid-form" data-selection-form>
         <input type="hidden" asp-for="Action" id="Action" />
 
-        <label>Backup storage location <input asp-for="Config.BackupRoot" class="form-control" /></label>
+        <div><h2>Where backups live</h2><p>Choose a local folder on the server. Clients send their files through the API.</p></div>
+        <label>Backup storage location <input asp-for="Config.BackupRoot" class="form-control path-field" /></label>
 
         <div>
-            <h2>Backup Categories</h2>
+            <h2>Default backup folders</h2>
             <p>Select the data LinkSafe should protect by default for all clients. Browser profiles are curated so caches are excluded.</p>
         </div>
 
-        <div class="checkbox-grid">
-            @foreach (var folder in Model.FolderOptions)
-            {
-                <label class="checkbox-item">
-                    <input type="checkbox" name="SelectedFolders" value="@folder" checked="@Model.Config.BackupFolders.Contains(folder)" />
-                    <span>@folder</span>
-                </label>
-            }
-        </div>
+        <partial name="_FolderSelection" model="new LinkSafeServer.Models.FolderSelectionViewModel(Model.FolderOptions, Model.Config.BackupFolders)" />
 
         <div class="number-grid">
-            <label>Backup interval minutes <input asp-for="Config.BackupIntervalMinutes" class="form-control" /></label>
-            <label>Watcher delay seconds <input asp-for="Config.DelayBeforeCopySeconds" class="form-control" /></label>
-            <label>Stable file check seconds <input asp-for="Config.StableFileCheckSeconds" class="form-control" /></label>
+            <p>Scan schedule: every user logon. File watching uploads changes during the session; Run Backup Now starts a manual scan.</p>
+            <label>Wait after a change (seconds) <input asp-for="Config.DelayBeforeCopySeconds" class="form-control" /><small class="muted">Lets a burst of edits finish before uploading.</small></label>
+            <label>File stability check (seconds) <input asp-for="Config.StableFileCheckSeconds" class="form-control" /><small class="muted">Waits for the file size to stop changing.</small></label>
         </div>
 
         <div class="button-row">
@@ -46,13 +39,13 @@
         </div>
     </form>
 
-    <div class="panel-card">
-        <h2>Server Paths</h2>
+    <details class="panel-card">
+        <summary>Advanced: server working folders</summary>
         <ul class="compact-list">
             <li>Logs: @Model.ServerLogPath</li>
             <li>Incoming: @Model.Config.IncomingRoot</li>
             <li>Quarantine: @Model.Config.QuarantineRoot</li>
             <li>Versions: @Model.Config.VersionsRoot</li>
         </ul>
-    </div>
+    </details>
 </div>

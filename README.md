@@ -1,258 +1,187 @@
 # LinkSafe
 
-LinkSafe is a secure Windows backup system with two parts:
+Windows user-data backup with an ASP.NET Core admin website/API, a silent per-user agent, and a WinForms client. Clients upload to the server; they do not write directly to an SMB backup share. This README is the current operating guide and handoff for another developer or coding agent.
 
-1. `LinkSafeServer`: ASP.NET Core Web UI + API for admin operations and client uploads
-2. `LinkSafeClientAgent`: silent Windows background agent plus a small WinForms setup app
+**Current source versions:** server and server installer **1.0.20**; client setup and background agent **1.0.16**. Projects target **.NET 10** and Windows x64 (Shared targets `net10.0`). A built EXE, installed service and installed client can have different versions. Building or pushing Git does not deploy them.
 
-The core security model is server-mediated backup. Clients do not write to SMB shares and do not receive NTFS access to backup storage. They upload ZIP packages over HTTP/HTTPS to the LinkSafe Server API, and only the server writes into the protected backup root.
+> **Trusted-LAN MVP, not production-hardened.** The admin website requires cookie login, but client controllers currently trust claimed account/device identities and do not enforce the originally requested registration token. This includes restore access. NTFS protection does not fix API impersonation. Do not expose this service to the Internet or an untrusted LAN. Authenticated enrollment, device/user authorization and HTTPS are priority work before production use.
 
-## Why the design avoids direct SMB backup
+## Start Here
 
-Direct client writes to a shared backup folder create the exact problems LinkSafe is meant to avoid:
+- Operators: read [Server Setup Guide](Installer/README.md), then installation, backup and restore below.
+- Coding agents: read [AGENTS.md](AGENTS.md), this README, relevant source and corresponding tests before editing.
+- Historical context: [development/release notes](docs/HISTORY.md) and dated test READMEs explain regressions; they are not the current deployment contract.
 
-- normal users can gain direct write/delete access to backups
-- clients can browse backup content they should not see
-- accidental or malicious deletes become much easier
-- `/MIR`-style sync behavior can erase retained backup data
-
-LinkSafe instead uses:
-
-- server-side client registration and policy validation
-- server-side username/computer sanitization
-- safe ZIP extraction with zip-slip protection
-- optional NTFS lockdown on `D:\LinkSafeBackups`
-- server-side versioning before overwrites
-
-## Solution layout
+## How It Works
 
 ```text
-/LinkSafe
-  /LinkSafeServer
-  /LinkSafeClient
-     /LinkSafeClientAgent
-     /LinkSafeClientSetup
-  /Shared
-/Scripts
-README.md
+Windows user logs in
+  -> SID-bound scheduled task starts agent as that user
+  -> agent registers, refreshes policy and checks restore preferences
+  -> startup scan compares local data/state with server presence
+  -> new/changed or server-missing data becomes bounded ZIP uploads
+  -> server validates/extracts into BackupRoot/user/computer
+  -> confirmed files update client state; failed uploads stay queued
+
+While running: file watching + policy/drive discovery + retry + heartbeat
+Admin Back up now: persistent request -> agent polling -> real scan/result
+Restore: server manifest -> compare original local destinations
+  -> approval as configured -> copy only missing files
 ```
 
-## Server overview
+### Backup Behavior
 
-`LinkSafeServer` runs on Windows Server and serves:
+- Login/startup scanning is the safety scan. Normal operation does not run a full scan every old `BackupIntervalMinutes` interval; do not accidentally reintroduce that behavior. Watcher changes, manual requests and newly selected/reconnected sources also trigger work.
+- Defaults include Desktop, Documents, Downloads, Pictures, Videos, Music, Favorites, AppData Roaming and Chrome/Edge/Firefox profiles. All AppData Local is not selected by default. Local custom folders and additional drives are supported, subject to protected-path, exclusion and availability checks.
+- Folder precedence is **local PC override > per-client server override > global server defaults**. Local overrides replace server folder choices. Global exclusions, limits and timing still apply. Choose **Use server settings** on the client to stop overriding the server.
+- Policy/drive refresh is independent of long uploads (about every 15 seconds). Heartbeats and inventory reporting have their own cadence. Selected drives must be ready and readable on that PC.
+- Empty directory backup, ZIP timestamp clamping, bounded packages, server-presence repair and upload-confirmed state are implemented. Do not replace presence checks with local timestamp-only checks: deleting server backups must allow them to be rebuilt.
+- Locked, unreadable, excluded, oversized or changing files can be skipped/reported. This is not VSS imaging; file counts alone do not prove a complete profile backup. Inspect errors and verify representative files.
+- **Back up now / Stop backup** is one stateful action. Stop cancels work and persists a pause, retaining packages. Resume with Back up now. **Enable / Disable agent** controls the agent separately. Queued requests, old success timestamps and enabled preferences do not prove newly completed backups.
+- No `/MIR`, delete synchronization or automatic deletion of server files when local files disappear. Old copies are versioned before replacement when versioning is enabled.
 
-- admin web UI at `http://BACKUP-SERVER:5055`
-- client API endpoints under `/api/...`
+### Admin Website
 
-The web UI includes:
+Navigation: Dashboard, Clients, Settings, Downloads and Logs. Legacy Browse/Jobs page files remain in source but are not navigation tabs. Backup job records still support dashboard/status history.
 
-- Dashboard
-- Settings
-- Clients
-- Backup Jobs
-- Logs
-- Restore / Browse Backups
+Clients supports individual actions and bulk selection (up to 200 PCs): backup requests, folder/path settings, restore server defaults, enable/disable server access and registry removal. Bulk actions require review/confirmation and CSRF protection. Removing a record does not delete backups or uninstall the agent; running agents can register again.
 
-The first run flow is:
+**Live status (1.0.20):** Clients, Dashboard and Logs poll authenticated GET pages every five seconds without reloading. Filters, selections and unsaved bulk edits remain intact. Hidden tabs pause; failures show stale-data/session warnings and retry with backoff. Storage usage is cached and measured asynchronously about once a minute. Logs preview at most the last 256 KiB / 200 lines. These are latest *reported* values, not direct observation of a remote PC.
 
-1. browse to the server URL
-2. create the first admin username/password
-3. sign in using cookie authentication
-4. configure backup root and backup policy
-5. apply secure storage permissions
+**Server-requested backup (agent 1.0.16+):** the server stores a request; an independent agent loop polls about every 15 seconds. Acknowledgment is automatic, not a user approval dialog. Offline/stopped agents cannot execute it. A user-paused/disabled agent reports Blocked when it can check in; the server does not silently resume it. Repeated requests reuse pending work. Preserve Queued/Blocked/Running/terminal distinctions.
 
-Server configuration is stored at `C:\ProgramData\LinkSafeServer\server-config.json`.
+### Restore / Move Data
 
-Server runtime data is stored at:
+Use **Restore data** in the client. The move-from-another-device flow lets the same domain-qualified account choose a source computer, with its last backup shown. It does not merge all devices. Automatic restore prefers the saved source, otherwise an eligible recent source; first-run/logon behavior follows saved consent and **Ask every time before restoring**.
 
-- `C:\ProgramData\LinkSafeServer\registered-clients.json`
-- `C:\ProgramData\LinkSafeServer\backup-jobs.json`
-- `C:\ProgramData\LinkSafeServer\user-folder-map.json`
-- `C:\ProgramData\LinkSafeServer\Logs\backup-server.log`
+The client compares a server manifest with original destination paths, previews missing/existing counts, then copies **only missing files**. Existing files, even different versions, remain untouched. User folders map to the current user's known folders; app/browser files map to corresponding AppData locations. Drive/custom data requires an enabled valid local mapping; missing mappings produce warnings, not guessed destinations. Failed transfers do not leave partial destination files.
 
-## Backup storage structure
+This is file migration, not a full roaming Windows profile, application installer or registry clone. Close applications before restoring settings. Passwords, device-bound credentials and some application state are not portable. Empty directory restore and very large manifests remain limited; inspect the restore service/tests before extending them. Source/server data is not deleted by "move". Same short usernames on unrelated workgroup PCs are not necessarily the same domain-qualified identity.
 
-Default backup root:
+## Install And Update
+
+### Server
+
+1. Build or obtain a trusted `LinkSafeServerSetup.exe`. It bundles server, runtime and client templates for Windows x64; no separate .NET installation is required on the target. Current builds are unsigned.
+2. Run Setup as administrator on Windows Server with Desktop Experience. For first install choose a new/empty folder on a fixed local NTFS drive, for example `D:\LinkSafeBackups`, and port `5055`.
+3. Install/update, open `http://127.0.0.1:5055/` on that server and create the admin account. Setup initially binds to loopback to prevent remote first-account claiming.
+4. Use **Enable LAN access** in Setup. Then use `http://SERVER-IP:5055/` from other PCs. The installer firewall rule covers local-subnet Domain/Private networks, not public networks.
+5. Configure folders, timing and storage in Settings, review storage permissions, then distribute clients through Downloads. Never grant normal users access to the backup root.
+
+The `LinkSafeServer` Windows service runs automatically in the background after successful installation. Closing Setup or the browser does not stop it. Running a development process is not a service installation.
+
+Updates preserve config, credentials and backups. Update during an agreed quiet window: the service stops briefly for binary replacement. Existing same-server SMB backup paths can be resolved to their verified local share target during upgrade; remote shares, unsafe paths and unrelated installations are rejected. No backup files are moved by this conversion. See the installer guide and storage-upgrade tests.
+
+### Client
+
+1. In server **Downloads**, enter only the reachable server IP and generate the single setup EXE. Port comes from server config. Keep the generated filename: current bootstrap derives the address from it, rather than embedding a new config resource in the binary.
+2. Run it as the actual backup user, not under a different administrator account. Test connectivity and **Enable agent**. Registration/policy download happen in the background; no token entry is required in the current client.
+3. Enable installs the managed UI, worker and this user's login integration. The UI appears in Start/Installed Apps and closes to the tray. UI tray startup and the background scheduled task are separate mechanisms.
+4. Choose folders locally only when this PC should override server selections. Verify the effective folders, startup state and a successful test backup.
+
+The server retains its two template binaries; generated downloads are cleaned up on generation/download on a best-effort basis. Locked files can prevent cleanup. Do not delete templates to remove old generated downloads.
+
+To update clients, install the matching server package/templates, generate a fresh setup, close the old tray UI and run the new setup as the same backup user. Managed upgrades check replacement metadata and use bounded rollback/cleanup; do not delete arbitrary older EXEs across the drive. Updating the server does not prove all agents upgraded. Live UI 1.0.20 needs no newer agent than 1.0.16.
+
+### Uninstall
+
+Use Windows Installed Apps for **LinkSafe Server** (administrator) or **LinkSafe Client** (owning user). Server uninstall keeps backup/config/log data; client uninstall keeps retained state/queue/logs by default. Do not delete these to repair startup. Legacy protected tasks may require an administrator to run `Scripts/Repair-LinkSafeLegacyTask.ps1` for the exact owning account; use `-WhatIf` first. Never grant Everyone permissions or run backups as SYSTEM to bypass a client permission error.
+
+## Storage And Diagnostics
+
+| Location | Purpose |
+| --- | --- |
+| `C:\ProgramData\LinkSafeServer` | Config, registered clients, jobs, identity mapping, remote requests and protected keys |
+| `C:\ProgramData\LinkSafeServer\Logs\backup-server.log` | Server log; also previewed in admin Logs |
+| `C:\ProgramData\LinkSafeServer\Downloads` | Installed client templates and temporary generated setup |
+| `%ProgramFiles%\LinkSafe Server` | Installed server binaries and SetupTools |
+| `%LOCALAPPDATA%\LinkSafeAgent` | Current user's config, policies, backup state, status, signals, queue and restore staging |
+| `%LOCALAPPDATA%\LinkSafeAgent\Logs\backup-agent.log` | Current user's agent log |
+| `%LOCALAPPDATA%\LinkSafeAgent\bin` | Managed background agent executable |
+| `%LOCALAPPDATA%\Programs\LinkSafeClient` | Installed UI executable |
+| `C:\ProgramData\LinkSafeAgent` | Retained legacy data; not the current writable workspace |
 
 ```text
-D:\LinkSafeBackups
-  _Incoming
-  _Quarantine
-  _Versions
-  _Logs
-  mhesham
-    PC-001
-      Documents
-      Desktop
-      Downloads
-      AppDataRoaming
+D:\LinkSafeBackups\
+  _Incoming\          temporary server uploads
+  _Quarantine\        rejected/suspicious packages
+  _Versions\          system versioning directory
+  _Logs\              storage system directory (main log is in ProgramData)
+  user\computer\
+    Desktop\ Documents\ Downloads\ AppDataRoaming\ ...
+    Drives\ ...       additional sources use logical package mappings
+    _Versions\date\   prior file copies, preserving relative paths
 ```
 
-Clients upload packages. The server stores them in:
+Storage ACLs are for SYSTEM, Administrators, the server identity and an optional approved backup-admin group, not normal users. No client SMB writes and no share creation by default. Never loosen server ACLs to fix a client configuration-directory error: client state belongs in that user's LocalAppData.
 
-`D:\LinkSafeBackups\{username}\{computerName}\`
+For connection failures check service, actual IP/port, firewall and server log. For stale folders check local/per-client overrides, policy sync and drive readiness. For stalled backups inspect request ID, stop signal, queue/disk space and worker log; do not delete queue/state to hide errors. For missing restored files check source, manifest, exclusions, original-path mapping and preserved existing files. Files deleted on the server should be repaired by presence-aware scans, not by blindly clearing client history.
 
-The server never mirrors client-side deletes into the backup store.
+## Developer Map
 
-## Secure storage permissions
+| Area | Entry points |
+| --- | --- |
+| Server host/auth/static files | `LinkSafe/LinkSafeServer/Program.cs` |
+| Website/forms/bulk actions | Server `Pages`, `Models/BulkClientSelection.cs` |
+| Live website | Server `wwwroot/js/live.js`, `wwwroot/js/site.js`, `Services/DashboardService.cs`, `Services/LogReaderService.cs` |
+| Registration/policy/commands | Server `Controllers`, `Services/ClientRegistryService.cs`, `Services/RemoteBackupService.cs` |
+| Upload/repair/versioning | Server `Services/BackupStorageService.cs`, `BackupPresenceService.cs`, `StorageSecurityService.cs` |
+| Server restore | Server `Services/RoamingRestoreService.cs`, `Controllers/RestoreController.cs` |
+| Agent orchestration | Agent `Program.cs`, `Worker.cs`, `Services/BackupCoordinator.cs` |
+| Packaging/watchers/policy | Agent `Services/BackupPackageBuilder.cs`, `FolderMappingService.cs`, `DriveInventoryWorker.cs` |
+| Remote polling | Agent `Services/RemoteBackupWorker.cs`, `RemoteBackupInbox.cs` |
+| Client UI | Setup `MainForm.*.cs` partial files |
+| Client install/upgrade | Setup `ClientDesktopInstallation.cs`, `LegacyClientMigration.cs`, `MainForm.Installation.cs`, `MainForm.Upgrade.cs` |
+| Shared contracts/state/path safety | `LinkSafe/Shared/Models`, `Storage`, `Constants/LinkSafeDefaults.cs` |
+| Single EXE installer | `Installer/LinkSafeServerSetup`, `Scripts/Build-LinkSafeServerSetup.ps1`, `Scripts/ServerSetup/Manage-LinkSafeServer.ps1` |
 
-The `Apply Secure Storage Permissions` action is intended to lock down the backup root so that normal users do not have direct read/write/delete access. The current MVP applies Windows ACLs for:
+Server base: `LinkSafe/LinkSafeServer`. Agent base: `LinkSafe/LinkSafeClient/LinkSafeClientAgent`. Setup base: `LinkSafe/LinkSafeClient/LinkSafeClientSetup`.
 
-- `Administrators`
-- `SYSTEM`
-- the configured LinkSafe service account
-- the optional backup operators group
+JSON is the MVP persistence layer, not SQL. Use existing atomic writes and mutation locks; a read-modify-write sequence is not protected merely by locking individual reads/writes. UI and worker are separate processes sharing per-user state. Preserve contract compatibility, operation IDs and cancellation semantics.
 
-Normal users should not be granted NTFS access to the backup root. Admin-only sharing such as `\\BACKUP-SERVER\LinkSafeBackups$` should remain optional and disabled by default.
+## Build And Test
 
-## Client overview
-
-`LinkSafeClientSetup` is a one-time setup screen for:
-
-- entering the server URL
-- testing `/api/health`
-- registering the client
-- enabling or disabling the agent
-- triggering an immediate backup
-- opening the client logs folder
-
-`LinkSafeClientAgent` runs silently and is designed to be launched via Scheduled Task at user logon so it can access the current user profile, including:
-
-- `%USERPROFILE%\Desktop`
-- `%USERPROFILE%\Documents`
-- `%USERPROFILE%\Downloads`
-- `%APPDATA%`
-
-Client configuration is stored at `C:\ProgramData\LinkSafeAgent\client-agent-config.json`.
-
-Client state is stored at:
-
-- `C:\ProgramData\LinkSafeAgent\status.json`
-- `C:\ProgramData\LinkSafeAgent\queue.json`
-- `C:\ProgramData\LinkSafeAgent\Queue`
-- `C:\ProgramData\LinkSafeAgent\Logs\backup-agent.log`
-
-## Client backup flow
-
-The agent performs:
-
-1. registration and policy sync
-2. full backup at startup/logon
-3. file watching for selected folders
-4. debounced incremental packaging for changed files
-5. local queueing when uploads fail
-6. retry of queued packages
-7. heartbeat updates back to the server
-
-Every ZIP package includes `metadata.json`.
-
-Startup backup is important because shutdown/logoff events are not reliable enough to be the only safety net. If a machine powers off before a watcher-driven upload completes, the next startup full backup catches what was missed.
-
-## Versioning behavior
-
-When versioning is enabled, the server keeps the old file before overwrite under:
-
-`D:\LinkSafeBackups\{username}\{computerName}\_Versions\yyyy-MM-dd\`
-
-This MVP does not delete stored backups when a user deletes the local source file.
-
-## Install the server
-
-From PowerShell:
+Run from repository root on Windows with .NET 10 SDK and PowerShell 7. Building needs NuGet access. Read external API documentation through Context7 before framework/package changes.
 
 ```powershell
-.\Scripts\Install-LinkSafeServer.ps1 -OpenFirewall
+dotnet restore LinkSafe.slnx
+dotnet build LinkSafe.slnx -c Release -p:UseSharedCompilation=false
+# Several suites load this exact non-RID Release server output:
+dotnet build LinkSafe/LinkSafeServer/LinkSafeServer.csproj -c Release -p:UseSharedCompilation=false
+dotnet run --project Tests/RemoteBackupChecks/RemoteBackupChecks.csproj -c Release -p:UseSharedCompilation=false
+pwsh -NoProfile -File Tests/ServerSetupChecks/StorageUpgradeChecks.ps1
 ```
 
-This script:
+These are executable harnesses, not conventional `dotnet test` projects. Installer/tests are outside `LinkSafe.slnx`; run them explicitly. Other targeted suites under `Tests/` cover BackupFlow, BackupRepair, BackupStop, RestoreFlow, PolicySync, Startup, ClientWorkspace, ClientInstallation, ClientUpgrade and ClientUi. Read runners before execution; optional live/installed checks are not isolated fixtures. The dated ReviewChecks report is historical, not proof every finding remains or is fixed.
 
-- publishes the server app
-- creates `C:\ProgramData\LinkSafeServer`
-- creates a Windows service named `LinkSafeServer`
-- optionally opens inbound TCP port `5055`
+Repository handoff verification (2026-09-11): a clean export of staged source built the Release solution with zero warnings/errors, then passed all 74 RemoteBackupChecks and 72 storage-upgrade checks. These tests did not modify live services, clients or backups. This is a scoped result, not a claim that every suite or deployment scenario was retested.
 
-To uninstall:
+Build the redistributable:
 
 ```powershell
-.\Scripts\Uninstall-LinkSafeServer.ps1
+pwsh -NoProfile -File Scripts/Build-LinkSafeServerSetup.ps1
 ```
 
-Use `-RemoveConfig` only if you want to remove `C:\ProgramData\LinkSafeServer`. Backups are intentionally left alone.
+Output: `artifacts/ServerSetup/LinkSafeServerSetup.exe` and `.exe.sha256`. The script freshly publishes server/client runtimes and static assets, creates a SHA-256 manifest and embeds the payload. Never package live ProgramData, credentials, records or backups. `bin`, `obj`, `publish` and `artifacts` are generated locally and excluded from Git; a fresh clone must build them.
 
-## Install the client agent
-
-From PowerShell on the client:
+Verify the exact `payload.zip` from that build's GUID staging directory:
 
 ```powershell
-.\Scripts\Install-LinkSafeClientAgent.ps1
+dotnet run --project Tests/ServerSetupChecks/ServerSetupChecks.csproj -c Release -p:PayloadPath="ABSOLUTE-PATH-TO-payload.zip" -- artifacts/ServerSetup/setup-preview.png --verify-payload
 ```
 
-This script:
+If publishing fails with a user-mapped reference DLL lock, stop only your own fixture/build processes and try `dotnet build-server shutdown`. Session-scoped `ProduceReferenceAssembly=false` and `UseSharedCompilation=false` were used for the 1.0.20 build; this disables compiler reference outputs, not application binaries. Do not kill installed agents/services or delete user state to unlock a build.
 
-- publishes the client agent
-- creates `C:\ProgramData\LinkSafeAgent`
-- registers a scheduled task named `LinkSafe Client Agent`
-- starts it at user logon
+Do not casually run the real server/agent for a development smoke test: default entry points use real ProgramData/LocalAppData. Prefer isolated hosts/stores or an approved disposable VM. Packaging tests do not prove service startup, firewall reachability, logon/tray startup or full backup/restore on another device. Acceptance-test those before rollout. For CLI semantics see [Microsoft publish documentation](https://learn.microsoft.com/en-us/dotnet/core/tools/dotnet-publish).
 
-To uninstall:
+## Handoff And Next Work
 
-```powershell
-.\Scripts\Uninstall-LinkSafeClientAgent.ps1
-```
+First inspect `git status`, current versions, relevant implementation and tests. The user chose missing-only restore, explicit source-device choice, local folder overrides, persistent Stop backup, login scanning and a compact teal UI. Preserve these decisions unless asked otherwise.
 
-To trigger an immediate manual backup:
+- Priority: authenticate enrollment and bind backup/restore/policy/command operations to verified identities. A shared token or filtered dropdown alone is not authorization. Add HTTPS and protect bootstrap/download trust before broader deployment.
+- Test clean installation and upgrades with standard domain users, multiple users per PC, Windows PowerShell 5.1, logon/offline recovery, disk exhaustion and inaccessible sources. Do not claim production readiness from fixture tests.
+- Review queue disk-pressure/retention and large restores before scaling. JSON registries, file-by-file manifests and unsigned binaries are MVP constraints.
+- Preserve ZIP containment, reparse-point rejection, NTFS ownership, missing-only atomic restore and upload-confirmed state. Add regression tests for repaired failures.
+- Retain installer fixes: PowerShell 5.1 `File.Replace` null-string handling; empty/single/multiple JSON client arrays; verified same-server UNC-to-local migration; config/registry/binary rollback without moving backups.
 
-```powershell
-.\Scripts\Run-LinkSafeBackupNow.ps1
-```
-
-## Operating the system
-
-Server admins should:
-
-1. install the server
-2. complete first setup
-3. set the backup root
-4. choose the backup folders and limits
-5. apply secure storage permissions
-6. give the server URL to client setup
-
-Client setup users should:
-
-1. open `LinkSafeClientSetup`
-2. enter the server URL
-3. test the connection
-4. register the client
-5. enable the agent
-6. run the first backup
-
-## Logs and troubleshooting
-
-Check server logs:
-
-- `C:\ProgramData\LinkSafeServer\Logs\backup-server.log`
-- Web UI `Logs` page
-
-Check client logs:
-
-- `C:\ProgramData\LinkSafeAgent\Logs\backup-agent.log`
-
-Common issues:
-
-- connection errors: verify server URL, firewall, and that the web app is running
-- permission errors: run storage permission application again and confirm the service account can write to the backup root
-- locked files: the agent skips unreadable files and retries later through full backups or later change uploads
-- server offline: packages stay in `C:\ProgramData\LinkSafeAgent\Queue` until a retry succeeds
-
-## Workgroup and domain notes
-
-The domain-qualified username is recorded, but LinkSafe sanitizes folder names before storage. For example:
-
-- `OSOOLCAPITAL\mhesham` -> `mhesham`
-- `AzureAD\user@company.com` -> `user_company.com`
-
-The server keeps a mapping file at `C:\ProgramData\LinkSafeServer\user-folder-map.json`.
-
-## MVP notes
-
-This MVP uses lightweight JSON storage instead of SQL, is designed for internal LAN usage, and accepts HTTP for initial deployment. HTTPS should be enabled before broader deployment, especially beyond a tightly controlled internal environment.
+Ask the owner only for consequential ambiguity: overwrite/delete semantics, permission changes, production rollout, different account/device targets or changing paused-agent behavior. Otherwise inspect, make a minimal compatible change and test it. Report what changed, checks run, remaining gaps, EXE versions built and whether anything was actually deployed. Never say the installed app was updated just because Git was pushed.

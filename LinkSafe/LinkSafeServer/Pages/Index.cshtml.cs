@@ -1,9 +1,11 @@
 using LinkSafeServer.Services;
 using Microsoft.AspNetCore.Mvc.RazorPages;
 using Shared.Models;
+using Microsoft.AspNetCore.Mvc;
 
 namespace LinkSafeServer.Pages;
 
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class IndexModel(DashboardService dashboardService) : PageModel
 {
     public DashboardSummary Summary { get; private set; } = new();
@@ -11,8 +13,9 @@ public sealed class IndexModel(DashboardService dashboardService) : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
+        Response.Headers["X-LinkSafe-Live"] = "1";
         Summary = await dashboardService.GetSummaryAsync(cancellationToken);
-        StorageUsageDisplay = FormatBytes(Summary.StorageUsageBytes);
+        StorageUsageDisplay = Summary.StorageUsageState == "Ready" ? FormatBytes(Summary.StorageUsageBytes) : Summary.StorageUsageState;
     }
 
     private static string FormatBytes(long bytes)

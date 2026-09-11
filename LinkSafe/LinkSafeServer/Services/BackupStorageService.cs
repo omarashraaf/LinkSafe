@@ -2,6 +2,7 @@ using System.IO.Compression;
 using LinkSafeServer.Pages.Browse;
 using Microsoft.AspNetCore.Http;
 using Shared.Models;
+using Shared.Storage;
 
 namespace LinkSafeServer.Services;
 
@@ -108,18 +109,15 @@ public sealed class BackupStorageService(
                         continue;
                     }
 
-                    if (config.EnableVersioning && File.Exists(destinationPath))
-                    {
-                        if (await TryVersionExistingFileAsync(clientRoot, destinationPath, relativePath, cancellationToken))
-                        {
-                            filesVersioned++;
-                        }
-                    }
-
+                    var stagedPath = Path.Combine(config.IncomingRoot, Guid.NewGuid().ToString("N") + ".extracting");
                     await using var entryStream = entry.Open();
-                    await using var destinationStream = new FileStream(destinationPath, FileMode.Create, FileAccess.Write, FileShare.Read);
-                    await entryStream.CopyToAsync(destinationStream, cancellationToken);
-                    File.SetLastWriteTimeUtc(destinationPath, entry.LastWriteTime.UtcDateTime);
+                    await AtomicBackupFile.WriteAsync(entryStream, stagedPath, destinationPath, entry.Length,
+                        entry.LastWriteTime.UtcDateTime, async () =>
+                    {
+                        if (config.EnableVersioning && File.Exists(destinationPath) &&
+                            await TryVersionExistingFileAsync(clientRoot, destinationPath, relativePath, cancellationToken))
+                            filesVersioned++;
+                    }, cancellationToken);
                     filesProcessed++;
                 }
             }
@@ -147,6 +145,21 @@ public sealed class BackupStorageService(
                 FilesProcessed = filesProcessed,
                 FilesVersioned = filesVersioned
             };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // The request token is cancelled; persist the terminal outcome with a bounded cleanup token.
+            using var cleanup = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+            Directory.CreateDirectory(config.QuarantineRoot);
+            if (File.Exists(incomingPath)) File.Move(incomingPath, Path.Combine(config.QuarantineRoot, incomingName), true);
+            job.Status = "Stopped";
+            job.Error = "Upload cancelled. Already completed files are retained.";
+            job.FinishedAt = DateTimeOffset.UtcNow;
+            await backupJobService.AddOrUpdateAsync(job, cleanup.Token);
+            await clientRegistryService.UpdateBackupStatusAsync(metadata.DomainUser, metadata.ComputerName,
+                job.FinishedAt, "Stopped", job.Error, cleanup.Token);
+            logger.LogInformation("Upload cancelled for {ComputerName}; complete files retained.", metadata.ComputerName);
+            return new BackupUploadResponse { Success = false, Message = job.Error };
         }
         catch (Exception ex)
         {

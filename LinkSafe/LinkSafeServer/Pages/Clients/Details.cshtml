@@ -1,52 +1,96 @@
 @page
 @model LinkSafeServer.Pages.Clients.DetailsModel
 @{
-    ViewData["Title"] = "Client Details";
+    ViewData["Title"] = "Backup selection";
 }
-
 <div class="page-grid">
     <div class="hero-card">
-        <h1>@Model.Client?.Username / @Model.Client?.ComputerName</h1>
-        <p>Detailed view of the registered client and its current backup status.</p>
+        <div class="breadcrumbs"><a asp-page="/Clients/Index">Clients</a><span>/</span><span>@Model.Client?.ComputerName</span></div>
+        <h1>Choose what to back up</h1>
+        <p>Choose the folders and drives this computer sends to your server.</p>
     </div>
-
     @if (Model.Client is null)
     {
-        <div class="alert alert-danger">Client not found.</div>
+        <div class="alert alert-danger">Client not found. <a asp-page="/Clients/Index">Return to clients</a>.</div>
     }
     else
     {
-        <div class="panel-card">
-            <dl class="details-grid">
-                <dt>Domain user</dt><dd>@Model.Client.DomainUser</dd>
-                <dt>Computer name</dt><dd>@Model.Client.ComputerName</dd>
-                <dt>First registered</dt><dd>@Model.Client.FirstRegisteredAt.ToLocalTime().ToString("g")</dd>
-                <dt>Last seen</dt><dd>@Model.Client.LastSeenAt.ToLocalTime().ToString("g")</dd>
-                <dt>Last backup</dt><dd>@(Model.Client.LastBackupTime?.ToLocalTime().ToString("g") ?? "-")</dd>
-                <dt>Last status</dt><dd>@Model.Client.LastBackupStatus</dd>
-                <dt>Last error</dt><dd>@Model.Client.LastError</dd>
-                <dt>Destination</dt><dd>@Model.Client.BackupDestinationPath</dd>
-            </dl>
+        @if (Request.Query["saved"] == "true" && ViewData.ModelState.IsValid)
+        {
+            <div class="alert alert-success" role="status">Selection saved. Updated agents check policy about every 15 seconds and scan changed sources after current work finishes. Paused backups stay paused. A local PC override takes precedence until Use server settings is selected in the agent.</div>
+        }
+        <div class="summary-strip">
+            <div><span>Computer</span><strong>@Model.Client.ComputerName</strong></div>
+            <div><span>User</span><strong>@Model.Client.DomainUser</strong></div>
+            <div><span>Last seen</span><strong>@Model.Client.LastSeenAt.ToLocalTime().ToString("g")</strong></div>
         </div>
-
-        <form method="post" class="panel-card grid-form">
+        @if (Model.Client.UsesLocalFolderSelection == true)
+        {
+            <div class="alert alert-warning" role="status">
+                <strong>This PC is using a local folder selection.</strong>
+                Choose Use server settings in the agent to apply the server folders below.
+                <div>Last reported folders: @string.Join(", ", Model.Client.ReportedBackupFolders.Concat(Model.Client.ReportedCustomFolders))</div>
+                <small>Agent selection reports refresh approximately every two minutes while connected.</small>
+            </div>
+        }
+        <form method="post" class="selection-form" data-selection-form>
             <input type="hidden" name="domainUser" value="@Model.Client.DomainUser" />
             <input type="hidden" name="computerName" value="@Model.Client.ComputerName" />
-
-            <h2>Backup Selection For This Client</h2>
-            <p>These folders override the server default for this machine. Important folders are selected by default.</p>
-
-            <div class="checkbox-grid">
-                @foreach (var folder in Model.FolderOptions)
+            <div asp-validation-summary="All" class="alert-danger" role="alert"></div>
+            <section class="panel-card">
+                <strong>@(Model.UseServerDefaults ? "Following server defaults" : "Separate selection for this client")</strong>
+                <p class="helper">Saving below sets a separate selection for this client. To follow future changes in server Settings instead, use server defaults. A local agent selection overrides either server selection.</p>
+                <button type="submit" asp-page-handler="Defaults" class="btn btn-outline-primary" formnovalidate>Use server defaults</button>
+            </section>
+            <section class="panel-card" aria-labelledby="folders-title">
+                <h2 id="folders-title">User folders</h2>
+                <p>Select the common user folders to include in the backup.</p>
+                <partial name="_FolderSelection" model="new LinkSafeServer.Models.FolderSelectionViewModel(Model.FolderOptions, Model.SelectedFolders)" />
+            </section>
+            <section class="panel-card" aria-labelledby="drives-title">
+                <div class="panel-header">
+                    <div><h2 id="drives-title">Additional drives</h2><p class="helper">Select a whole drive on this computer.</p></div>
+                    <a class="btn btn-outline-primary btn-sm" asp-page="/Clients/Details" asp-route-domainUser="@Model.Client.DomainUser" asp-route-computerName="@Model.Client.ComputerName">Refresh drive list</a>
+                </div>
+                @if (Model.DriveOptions.Count == 0)
                 {
-                    <label class="checkbox-item">
-                        <input type="checkbox" name="SelectedFolders" value="@folder" checked="@Model.SelectedFolders.Contains(folder)" />
-                        <span>@folder</span>
-                    </label>
+                    <div class="empty-state"><strong>No drives reported yet</strong>Connect the updated agent, then refresh this list. You can also enter a specific folder below.</div>
                 }
+                <div class="source-grid drive-grid">
+                    @foreach (var drive in Model.DriveOptions)
+                    {
+                        var available = Model.Client.AvailableDrives.Contains(drive, StringComparer.OrdinalIgnoreCase);
+                        <label class="source-tile @(available ? "" : "unavailable")">
+                            <input type="checkbox" name="SelectedDrives" value="@drive" checked="@Model.SelectedDrives.Contains(drive, StringComparer.OrdinalIgnoreCase)" />
+                            <svg class="icon" aria-hidden="true"><use href="@Url.Content("~/icons.svg#drive")"></use></svg>
+                            <span><strong>@drive</strong><small>@(available ? "Reported by agent" : "Not currently reported")</small></span>
+                        </label>
+                    }
+                </div>
+                <p class="helper">Only selected drives are backed up. System and backup storage folders are excluded. The agent checks drives every 15 seconds; refresh this list for its latest report.</p>
+            </section>
+            <details class="panel-card" open="@(!string.IsNullOrWhiteSpace(Model.CustomFoldersText))">
+                <summary>Specific folders</summary>
+                <label class="field-label" for="CustomFoldersText">Additional folders on this computer</label>
+                <textarea asp-for="CustomFoldersText" class="form-control path-field" rows="3" placeholder="D:\Projects&#10;E:\Accounts" aria-describedby="custom-help"></textarea>
+                <p class="helper" id="custom-help">Enter one full local path per line. For example: D:\Projects. This selects just that folder, not the whole drive.</p>
+            </details>
+            <div class="save-bar">
+                <div><strong class="selection-summary" aria-live="polite"></strong><small data-save-hint>Updated agents refresh policy in the background, including during uploads.</small></div>
+                <button type="submit" class="btn btn-primary">Save backup selection</button>
             </div>
-
-            <button type="submit" class="btn btn-primary">Save Client Backup Policy</button>
         </form>
+        <details class="panel-card">
+            <summary>Backup destination and client details</summary>
+            <dl class="details-grid">
+                <dt>Server destination</dt><dd class="path-field">@Model.Client.BackupDestinationPath</dd>
+                <dt>Last backup</dt><dd>@(Model.Client.LastBackupTime?.ToLocalTime().ToString("g") ?? "No backups yet")</dd>
+                <dt>Last status</dt><dd><span class="status" data-status="@Model.Client.LastBackupStatus">@Model.Client.LastBackupStatus</span></dd>
+                <dt>Last error</dt><dd>@(string.IsNullOrWhiteSpace(Model.Client.LastError) ? "None reported" : Model.Client.LastError)</dd>
+                <dt>First registered</dt><dd>@Model.Client.FirstRegisteredAt.ToLocalTime().ToString("g")</dd>
+                <dt>Agent version</dt><dd>@Model.Client.AgentVersion</dd>
+            </dl>
+            <p class="helper">Drive files are stored under Drives on the server. Automatic roaming restore only restores profile folders.</p>
+        </details>
     }
 </div>

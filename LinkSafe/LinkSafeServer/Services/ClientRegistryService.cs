@@ -1,4 +1,5 @@
 using Shared.Constants;
+using LinkSafeServer.Models;
 using Shared.Models;
 using Shared.Storage;
 
@@ -10,6 +11,7 @@ public sealed class ClientRegistryService(
     PathSanitizer pathSanitizer,
     ILogger<ClientRegistryService> logger)
 {
+    private readonly AsyncMutationLock _mutations = new();
     private readonly JsonFileStore<List<RegisteredClientRecord>> _clientsStore = new(LinkSafeDefaults.RegisteredClientsPath);
     private readonly JsonFileStore<Dictionary<string, string>> _userMapStore = new(LinkSafeDefaults.UserFolderMapPath);
 
@@ -26,6 +28,7 @@ public sealed class ClientRegistryService(
 
     public async Task<RegistrationResponse> RegisterAsync(RegistrationRequest request, CancellationToken cancellationToken = default)
     {
+        using var mutation = await _mutations.EnterAsync(cancellationToken);
         if (string.IsNullOrWhiteSpace(request.DomainUser) ||
             string.IsNullOrWhiteSpace(request.Username) ||
             string.IsNullOrWhiteSpace(request.ComputerName))
@@ -71,6 +74,21 @@ public sealed class ClientRegistryService(
         existing.ComputerFolderName = computerFolderName;
         existing.BackupDestinationPath = destinationPath;
         existing.LastSeenAt = DateTimeOffset.UtcNow;
+        if (request.UsesLocalFolderSelection.HasValue)
+        {
+            // Informational only: a client report must never mutate the administrator's policy.
+            existing.UsesLocalFolderSelection = request.UsesLocalFolderSelection;
+            existing.ReportedBackupFolders = (request.ReportedBackupFolders ?? []).Where(LinkSafeDefaults.KnownFolders.Contains).Distinct().ToList();
+            existing.ReportedCustomFolders = (request.ReportedCustomFolders ?? [])
+                .Where(path => BackupSourcePaths.TryNormalize(path, out _)).Take(100).ToList();
+        }
+        if (request.AvailableDrives is not null)
+        {
+            existing.AvailableDrives = request.AvailableDrives
+                .Where(path => BackupSourcePaths.TryNormalize(path, out var normalized) && normalized.Length == 3)
+                .Select(path => path.ToUpperInvariant())
+                .Distinct(StringComparer.OrdinalIgnoreCase).Order().ToList();
+        }
 
         await _clientsStore.SaveAsync(clients.OrderBy(item => item.Username).ThenBy(item => item.ComputerName).ToList(), cancellationToken);
 
@@ -93,6 +111,7 @@ public sealed class ClientRegistryService(
 
     public async Task<OperationResult> UpdateHeartbeatAsync(HeartbeatRequest request, CancellationToken cancellationToken = default)
     {
+        using var mutation = await _mutations.EnterAsync(cancellationToken);
         var clients = await GetAllAsync(cancellationToken);
         var client = clients.FirstOrDefault(item =>
             item.DomainUser.Equals(request.DomainUser, StringComparison.OrdinalIgnoreCase) &&
@@ -119,6 +138,7 @@ public sealed class ClientRegistryService(
         string error,
         CancellationToken cancellationToken = default)
     {
+        using var mutation = await _mutations.EnterAsync(cancellationToken);
         var clients = await GetAllAsync(cancellationToken);
         var client = clients.FirstOrDefault(item =>
             item.DomainUser.Equals(domainUser, StringComparison.OrdinalIgnoreCase) &&
@@ -138,6 +158,7 @@ public sealed class ClientRegistryService(
 
     public async Task DisableAsync(string domainUser, string computerName, bool disabled, CancellationToken cancellationToken = default)
     {
+        using var mutation = await _mutations.EnterAsync(cancellationToken);
         var clients = await GetAllAsync(cancellationToken);
         var client = clients.FirstOrDefault(item =>
             item.DomainUser.Equals(domainUser, StringComparison.OrdinalIgnoreCase) &&
@@ -154,6 +175,7 @@ public sealed class ClientRegistryService(
 
     public async Task RemoveAsync(string domainUser, string computerName, CancellationToken cancellationToken = default)
     {
+        using var mutation = await _mutations.EnterAsync(cancellationToken);
         var clients = await GetAllAsync(cancellationToken);
         clients.RemoveAll(item =>
             item.DomainUser.Equals(domainUser, StringComparison.OrdinalIgnoreCase) &&
@@ -166,8 +188,10 @@ public sealed class ClientRegistryService(
         string computerName,
         List<string> backupFolders,
         List<string> customFolders,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool useServerDefaults = false)
     {
+        using var mutation = await _mutations.EnterAsync(cancellationToken);
         var clients = await GetAllAsync(cancellationToken);
         var client = clients.FirstOrDefault(item =>
             item.DomainUser.Equals(domainUser, StringComparison.OrdinalIgnoreCase) &&
@@ -178,8 +202,33 @@ public sealed class ClientRegistryService(
             return;
         }
 
-        client.BackupFoldersOverride = backupFolders;
-        client.CustomFoldersOverride = customFolders;
+        client.BackupFoldersOverride = useServerDefaults ? [] : backupFolders;
+        client.CustomFoldersOverride = useServerDefaults ? [] : customFolders;
+        client.HasBackupPolicyOverride = !useServerDefaults;
         await _clientsStore.SaveAsync(clients, cancellationToken);
+    }
+
+    public async Task<int> ApplyBulkAsync(List<string> keys, string action, List<string> folders, List<string> paths, CancellationToken token)
+    {
+        if (action is not ("Settings" or "Defaults" or "Enable" or "Disable" or "Remove")) throw new ArgumentException("Unknown registry action.");
+        if (action == "Settings") (folders, paths) = BulkClientSelection.ValidatePolicy(folders, paths);
+        using var mutation = await _mutations.EnterAsync(token);
+        var clients = await GetAllAsync(token);
+        // Resolve again under the same lock as registration and heartbeats, then save once.
+        var selected = BulkClientSelection.Resolve(clients, keys);
+        foreach (var client in selected)
+        {
+            if (action == "Remove") clients.Remove(client);
+            else if (action is "Enable" or "Disable") client.IsDisabled = action == "Disable";
+            else
+            {
+                client.HasBackupPolicyOverride = action == "Settings";
+                client.BackupFoldersOverride = action == "Settings" ? [.. folders] : [];
+                client.CustomFoldersOverride = action == "Settings" ? [.. paths] : [];
+            }
+        }
+        await _clientsStore.SaveAsync(clients, token);
+        logger.LogInformation("Admin bulk {Action} applied to {Count} registered clients. Backup files were not changed.", action, selected.Count);
+        return selected.Count;
     }
 }

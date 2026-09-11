@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace LinkSafeServer.Pages.Logs;
 
+[ResponseCache(NoStore = true, Location = ResponseCacheLocation.None)]
 public sealed class IndexModel(LogReaderService logReaderService) : PageModel
 {
     public IReadOnlyList<string> Lines { get; private set; } = [];
@@ -11,6 +12,7 @@ public sealed class IndexModel(LogReaderService logReaderService) : PageModel
 
     public async Task OnGetAsync(CancellationToken cancellationToken)
     {
+        Response.Headers["X-LinkSafe-Live"] = "1";
         Lines = await logReaderService.ReadRecentLinesAsync(cancellationToken: cancellationToken);
     }
 

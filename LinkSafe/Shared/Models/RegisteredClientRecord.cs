@@ -16,6 +16,11 @@ public sealed class RegisteredClientRecord
     public string LastError { get; set; } = string.Empty;
     public string AgentVersion { get; set; } = "1.0.0";
     public bool IsDisabled { get; set; }
+    public List<string> AvailableDrives { get; set; } = [];
+    public bool? UsesLocalFolderSelection { get; set; }
+    public List<string> ReportedBackupFolders { get; set; } = [];
+    public List<string> ReportedCustomFolders { get; set; } = [];
+    public bool HasBackupPolicyOverride { get; set; }
     public List<string> BackupFoldersOverride { get; set; } = [];
     public List<string> CustomFoldersOverride { get; set; } = [];
 }

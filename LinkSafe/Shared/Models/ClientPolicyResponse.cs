@@ -6,6 +6,7 @@ public sealed class ClientPolicyResponse
 {
     public List<string> BackupFolders { get; set; } = [.. LinkSafeDefaults.DefaultBackupFolders];
     public List<string> CustomFolders { get; set; } = [];
+    public List<string> ProtectedSourcePaths { get; set; } = [];
     public List<string> ExcludeDirectories { get; set; } = [.. LinkSafeDefaults.DefaultExcludeDirectories];
     public List<string> ExcludeFiles { get; set; } = [.. LinkSafeDefaults.DefaultExcludeFiles];
     public int BackupIntervalMinutes { get; set; } = 30;

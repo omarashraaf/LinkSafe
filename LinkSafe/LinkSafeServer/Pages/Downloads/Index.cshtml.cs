@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.Mvc.RazorPages;
 
 namespace LinkSafeServer.Pages.Downloads;
 
-public sealed class IndexModel(DownloadCatalogService downloadCatalogService, ServerConfigService serverConfigService) : PageModel
+public sealed class IndexModel(DownloadCatalogService downloadCatalogService) : PageModel
 {
     [BindProperty]
     public string ServerIp { get; set; } = string.Empty;
@@ -22,15 +22,12 @@ public sealed class IndexModel(DownloadCatalogService downloadCatalogService, Se
         }
 
         var bytes = await System.IO.File.ReadAllBytesAsync(item.FullPath, cancellationToken);
-        var config = await serverConfigService.GetAsync(cancellationToken);
-        var port = Uri.TryCreate(config.ServerUrl, UriKind.Absolute, out var uri) ? uri.Port : 5055;
-        var fileName = $"LinkSafeClientSetup-{ServerIp}-p{port}.exe";
         Response.OnCompleted(() =>
         {
             downloadCatalogService.DeleteGeneratedSetup();
             return Task.CompletedTask;
         });
 
-        return File(bytes, item.ContentType, fileName);
+        return File(bytes, item.ContentType, item.Name);
     }
 }

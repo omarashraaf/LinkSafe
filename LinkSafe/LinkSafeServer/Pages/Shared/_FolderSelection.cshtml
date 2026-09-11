@@ -1,0 +1,29 @@
+@model LinkSafeServer.Models.FolderSelectionViewModel
+@functions {
+    private static (string Label, string Description, string Icon) Describe(string folder) => folder switch
+    {
+        "Desktop" => ("Desktop", "Files on the desktop", "computer"),
+        "Documents" => ("Documents", "Documents and work files", "logs"),
+        "Downloads" => ("Downloads", "Downloaded files", "download"),
+        "Pictures" => ("Pictures", "Photos and images", "folder"),
+        "Videos" => ("Videos", "Videos and recordings", "folder"),
+        "Music" => ("Music", "Music and audio files", "folder"),
+        "Favorites" => ("Favorites", "Saved favorites", "folder"),
+        "AppDataRoaming" => ("App data (Roaming)", "Application profile settings", "settings"),
+        "ChromeProfile" => ("Chrome profile", "Chrome data and settings", "globe"),
+        "EdgeProfile" => ("Edge profile", "Edge data and settings", "globe"),
+        "FirefoxProfile" => ("Firefox profile", "Firefox data and settings", "globe"),
+        _ => (folder, "User folder", "folder")
+    };
+}
+<div class="source-grid">
+    @foreach (var folder in Model.Options)
+    {
+        var display = Describe(folder);
+        <label class="source-tile">
+            <input type="checkbox" name="SelectedFolders" value="@folder" checked="@Model.Selected.Contains(folder, StringComparer.OrdinalIgnoreCase)" />
+            <svg class="icon" aria-hidden="true"><use href="@Url.Content($"~/icons.svg#{display.Icon}")"></use></svg>
+            <span><strong>@display.Label</strong><small>@display.Description</small></span>
+        </label>
+    }
+</div>

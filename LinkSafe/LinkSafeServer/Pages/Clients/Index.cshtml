@@ -1,52 +1,130 @@
 @page
+@using global::Shared.Models
+@using LinkSafeServer.Models
 @model LinkSafeServer.Pages.Clients.IndexModel
 @{
     ViewData["Title"] = "Clients";
 }
 
-<section class="page-grid">
+<section class="page-grid" data-live-url="@Url.Page("/Clients/Index", new { live = 1 })">
     <div class="hero-card">
-        <h1>Registered Clients</h1>
-        <p>Track agent status, disable clients, and inspect each backup destination.</p>
+        <h1>Your computers</h1>
+        <p>Find a computer, check its last backup, and choose what to protect.</p>
     </div>
 
+    <div asp-validation-summary="All" class="alert alert-danger" role="alert"></div>
+    @if (Model.ShowReview)
+    {
+        <section class="panel-card bulk-review" aria-labelledby="bulk-review-title">
+            <h2 id="bulk-review-title">Review @Model.BulkAction!.ToLowerInvariant() for @Model.ReviewedClients.Count computers</h2>
+            <p>Only the computers listed below will be affected.</p>
+            <ul class="bulk-targets">
+                @foreach (var client in Model.ReviewedClients) { <li><strong>@client.ComputerName</strong> / @client.DomainUser</li> }
+            </ul>
+            <form method="post" asp-page-handler="Apply">
+                <input type="hidden" asp-for="BulkAction" />
+                @foreach (var client in Model.ReviewedClients) { <input type="hidden" name="SelectedClients" value="@BulkClientSelection.Key(client)" /> }
+                @if (Model.BulkAction == "Settings")
+                {
+                    <p><strong>Replace the server folder selection for these computers.</strong> Starting choices below are server defaults, not a combination of each PC's current choices. Backup timing and exclusions are unchanged.</p>
+                    <partial name="_FolderSelection" model="new FolderSelectionViewModel(Model.FolderOptions, Model.SelectedFolders)" />
+                    <label for="CustomFoldersText" class="field-label">Additional drives or folders (one local path per line)</label>
+                    <textarea asp-for="CustomFoldersText" class="form-control path-field" rows="3" placeholder="D:\&#10;E:\Projects"></textarea>
+                    <p class="helper">Paths refer to each selected PC. Drives can differ between computers; unavailable sources cannot be backed up.</p>
+                }
+                @if (Model.BulkAction is "Settings" or "Defaults")
+                {
+                    <p class="alert alert-info">@Model.ReviewedClients.Count(c => c.UsesLocalFolderSelection == true) selected PCs report a local folder override. They keep their own choices until <strong>Use server settings</strong> is selected in the agent.</p>
+                    @if (Model.BulkAction == "Defaults") { <p>Clear these clients' server overrides and follow the global server defaults, including future changes.</p> }
+                }
+                @if (Model.BulkAction == "Remove") { <p class="alert alert-danger"><strong>Remove registry entries only.</strong> Backups will not be deleted and agents will not be uninstalled. Running agents may register again. Use Disable instead to block server access.</p> }
+                @if (Model.BulkAction == "Backup") { <p>Requests wait for available agents. Existing pending requests are reused; disabled clients and agents older than 1.0.16 are skipped. Locally paused agents are not forced to resume.</p> }
+                @if (Model.BulkAction is "Enable" or "Disable") { <p>This changes server access only. It does not install, start, stop, or change the Windows startup setting of an agent.</p> }
+                <div class="table-actions">
+                    <button type="submit" name="confirmed" value="true" class="btn @(Model.BulkAction == "Remove" ? "btn-outline-danger" : "btn-primary")">Confirm @Model.BulkAction.ToLowerInvariant()</button>
+                    <a class="btn btn-outline-primary" asp-page="/Clients/Index">Cancel</a>
+                </div>
+            </form>
+        </section>
+    }
+
     <div class="panel-card">
-        <table class="table table-dark table-striped">
+        @if (Request.Query["live"] != "1" && !string.IsNullOrWhiteSpace(Model.Notice))
+        {
+            <div class="alert alert-info" role="status">@Model.Notice</div>
+        }
+        <div class="panel-header">
+            <div class="search-field"><label for="client-search">Find a computer or user</label><input type="search" id="client-search" class="form-control" placeholder="Search clients..." data-client-search /></div>
+            <a class="btn btn-primary" asp-page="/Downloads/Index">Add a computer</a>
+            <span class="small muted" data-live-status role="status">Connecting to live updates...</span>
+            <noscript><a asp-page="/Clients/Index">Refresh status (JavaScript is disabled)</a></noscript>
+        </div>
+        <p class="small muted" data-client-count aria-live="polite">@Model.Clients.Count registered clients</p>
+        <form id="bulk-clients" method="post" asp-page-handler="Preview" class="bulk-toolbar">
+            <div><strong data-bulk-count aria-live="polite">0 selected</strong><small>Select up to @BulkClientSelection.Limit computers.</small></div>
+            <label for="bulk-action">Action</label>
+            <select name="BulkAction" id="bulk-action" class="form-control" required>
+                <option value="">Choose an action</option>
+                <option value="Backup">Back up selected</option>
+                <option value="Settings">Change backup folders</option>
+                <option value="Defaults">Use server defaults</option>
+                <option value="Enable">Enable server access</option>
+                <option value="Disable">Disable server access</option>
+                <option value="Remove">Remove from registry</option>
+            </select>
+            <button type="submit" class="btn btn-primary" data-bulk-review>Review selection</button>
+            <button type="button" class="btn btn-outline-primary" data-bulk-clear>Clear selection</button>
+        </form>
+        <div class="table-scroll"><table class="table">
             <thead>
             <tr>
-                <th>Username</th>
-                <th>Domain User</th>
+                <th><input type="checkbox" data-select-visible aria-label="Select all visible computers" /></th>
                 <th>Computer</th>
-                <th>Version</th>
+                <th>User</th>
                 <th>Last Seen</th>
                 <th>Last Backup</th>
                 <th>Status</th>
-                <th>Destination</th>
+                <th>Requested backup</th>
                 <th>Actions</th>
             </tr>
             </thead>
-            <tbody>
+            <tbody data-live-region="clients" data-live-clients>
             @foreach (var client in Model.Clients)
             {
-                <tr>
-                    <td>@client.Username</td>
-                    <td>@client.DomainUser</td>
-                    <td>@client.ComputerName</td>
-                    <td>@client.AgentVersion</td>
-                    <td>@client.LastSeenAt.ToLocalTime().ToString("g")</td>
-                    <td>@(client.LastBackupTime?.ToLocalTime().ToString("g") ?? "-")</td>
-                    <td>@client.LastBackupStatus</td>
-                    <td>@client.BackupDestinationPath</td>
+                var request = Model.Requests.FirstOrDefault(x => x.Matches(client.DomainUser, client.ComputerName));
+                var supported = RemoteBackupRequest.Supports(client.AgentVersion);
+                <tr data-client-row data-client-key="@BulkClientSelection.Key(client)" data-search-text="@($"{client.ComputerName} {client.Username} {client.DomainUser}")">
+                    <td><input type="checkbox" form="bulk-clients" name="SelectedClients" value="@BulkClientSelection.Key(client)" data-select-client checked="@Model.SelectedClients.Contains(BulkClientSelection.Key(client))" aria-label="Select @client.ComputerName for @client.DomainUser" /></td>
+                    <td data-live-cell="computer"><strong>@client.ComputerName</strong><small>Agent @client.AgentVersion</small></td>
+                    <td data-live-cell="user"><strong>@client.Username</strong><small>@client.DomainUser</small></td>
+                    <td data-live-cell="seen">@client.LastSeenAt.ToLocalTime().ToString("g")</td>
+                    <td data-live-cell="backup">@(client.LastBackupTime?.ToLocalTime().ToString("g") ?? "-")</td>
+                    <td data-live-cell="status"><span class="status" data-status="@(client.IsDisabled ? "Disabled" : client.LastBackupStatus)">@(client.IsDisabled ? "Disabled" : string.IsNullOrWhiteSpace(client.LastBackupStatus) ? "Not yet reported" : client.LastBackupStatus)</span></td>
+                    <td data-live-cell="request">
+                        @if (request is not null)
+                        {
+                            <span class="status" data-status="@request.Status">@request.Status</span>
+                            <small>@request.Message</small>
+                            <small>Requested @request.RequestedAt.ToLocalTime().ToString("g")</small>
+                            <small>@(request.UpdatedAt is null ? "Not acknowledged yet" : $"Last report {request.UpdatedAt.Value.ToLocalTime():g}")</small>
+                        }
+                        else { <small>@(supported ? "No request" : "Requires agent 1.0.16+")</small> }
+                    </td>
                     <td>
                         <div class="table-actions">
-                            <a class="btn btn-sm btn-outline-light" asp-page="/Clients/Details" asp-route-domainUser="@client.DomainUser" asp-route-computerName="@client.ComputerName">Details</a>
+                            <form method="post" asp-page-handler="Backup" class="inline-form">
+                                <input type="hidden" name="domainUser" value="@client.DomainUser" />
+                                <input type="hidden" name="computerName" value="@client.ComputerName" />
+                                <button data-live-button="backup" type="submit" class="btn btn-sm btn-primary" disabled="@(client.IsDisabled || !supported || request is { IsTerminal: false })">@(request is { IsTerminal: false } ? "Backup requested" : "Back up now")</button>
+                            </form>
+                            <a class="btn btn-sm btn-outline-primary" asp-page="/Clients/Details" asp-route-domainUser="@client.DomainUser" asp-route-computerName="@client.ComputerName">Choose backups</a>
                             <form method="post" asp-page-handler="Toggle" class="inline-form">
                                 <input type="hidden" name="domainUser" value="@client.DomainUser" />
                                 <input type="hidden" name="computerName" value="@client.ComputerName" />
-                                <input type="hidden" name="disabled" value="@(!client.IsDisabled)" />
-                                <button type="submit" class="btn btn-sm btn-outline-warning">@(client.IsDisabled ? "Enable" : "Disable")</button>
+                                <input data-live-value="disabled" type="hidden" name="disabled" value="@(!client.IsDisabled)" />
+                                <button data-live-button="toggle" type="submit" class="btn btn-sm btn-outline-warning">@(client.IsDisabled ? "Enable" : "Disable")</button>
                             </form>
-                            <form method="post" asp-page-handler="Remove" class="inline-form">
+                            <form method="post" asp-page-handler="Remove" class="inline-form" data-confirm="Remove this computer from the registry? Existing backup files will be kept.">
                                 <input type="hidden" name="domainUser" value="@client.DomainUser" />
                                 <input type="hidden" name="computerName" value="@client.ComputerName" />
                                 <button type="submit" class="btn btn-sm btn-outline-danger">Remove</button>
@@ -56,6 +134,7 @@
                 </tr>
             }
             </tbody>
-        </table>
+        </table></div>
+        <div class="empty-state" data-client-empty hidden="@(Model.Clients.Count > 0)"><strong>No matching computers</strong>Try another search, or add a computer using the setup app.</div>
     </div>
 </section>

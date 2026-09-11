@@ -1,8 +1,7 @@
 [CmdletBinding()]
 param()
 
-$root = Split-Path -Parent $PSScriptRoot
-$agentExe = Join-Path $root "artifacts\LinkSafeClientAgent\LinkSafeClientAgent.exe"
+$agentExe = Join-Path ([Environment]::GetFolderPath('LocalApplicationData')) 'LinkSafeAgent\bin\LinkSafeClientAgent.exe'
 
 if (-not (Test-Path $agentExe)) {
     throw "Client agent executable not found at $agentExe. Install or publish the client agent first."

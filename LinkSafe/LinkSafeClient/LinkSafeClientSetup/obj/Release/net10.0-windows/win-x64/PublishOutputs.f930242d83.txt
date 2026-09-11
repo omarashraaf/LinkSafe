@@ -1,3 +1,0 @@
-C:\ProgramData\LinkSafeAgent\setup-publish-new\LinkSafeClientSetup.pdb
-C:\ProgramData\LinkSafeAgent\setup-publish-new\Shared.pdb
-C:\ProgramData\LinkSafeAgent\setup-publish-new\LinkSafeClientSetup.exe
