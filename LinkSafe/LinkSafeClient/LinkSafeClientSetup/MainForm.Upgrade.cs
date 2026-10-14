@@ -74,7 +74,7 @@ public sealed partial class MainForm
                 while ((await _statusStore.LoadAsync(() => new StatusFileModel())).LastStopRequestId != stopId)
                 {
                     if (DateTimeOffset.UtcNow >= deadline)
-                        throw new InvalidOperationException("Agent has not paused yet. Close any restore prompt and try again. The old version was kept.");
+                        throw new InvalidOperationException("Agent has not paused yet. Close any active backup or restore operation and try again. The old version was kept.");
                     await Task.Delay(500);
                 }
                 await StopManagedAgentProcessAsync(files.ExecutablePath);
@@ -153,7 +153,7 @@ public sealed partial class MainForm
     {
         using var process = Process.Start(new ProcessStartInfo(path)
         {
-            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden, Arguments = "--skip-restore-prompt=true"
+            UseShellExecute = false, CreateNoWindow = true, WindowStyle = ProcessWindowStyle.Hidden
         }) ?? throw new IOException("The updated agent could not start.");
         await Task.Delay(2000);
         if (process.HasExited) throw new IOException("Agent exited during startup. The previous binary will be restored.");

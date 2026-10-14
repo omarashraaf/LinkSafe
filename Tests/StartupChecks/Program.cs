@@ -39,6 +39,17 @@ Check(calls.All(args => args[Array.IndexOf(args, "/TN") + 1] == AgentStartupTask
 Check(calls.Count == 3 && calls.Last()[0] == "/Query", "Enable verifies the persisted task after creation");
 Check(!calls.Single(args => args[0] == "/Create").Contains("/F"), "Unverified existing task is never force overwritten");
 Check(!File.Exists(calls.Single(args => args[0] == "/Create")[4]), "Temporary task XML is removed after installation");
+calls.Clear();
+await scheduler.InstallAsync(exe, sid);
+Check(calls.Count == 1 && calls[0][0] == "/Query", "Already valid startup task is not recreated or force overwritten");
+var additionalTrigger = XDocument.Parse(xml);
+additionalTrigger.Root!.Element(ns + "Triggers")!.Add(new XElement(ns + "BootTrigger"));
+try { AgentStartupTask.Validate(additionalTrigger.ToString(), exe, sid); throw new Exception("Additional trigger accepted"); }
+catch (InvalidDataException) { Check(true, "Additional trigger cannot pass the idempotent verification shortcut"); }
+var additionalPrincipal = XDocument.Parse(xml);
+additionalPrincipal.Root!.Element(ns + "Principals")!.Add(new XElement(ns + "Principal"));
+try { AgentStartupTask.Validate(additionalPrincipal.ToString(), exe, sid); throw new Exception("Additional principal accepted"); }
+catch (InvalidDataException) { Check(true, "Additional principal cannot pass the idempotent verification shortcut"); }
 var failures = new AgentStartupTask(args => Task.FromResult(args[0] == "/Query" ? new SchedulerResult(1, "", "not found") : new(5, "", "Access denied")));
 try { await failures.InstallAsync(exe, sid); throw new Exception("Failure hidden"); }
 catch (InvalidOperationException ex) { Check(ex.Message.Contains("Access denied"), "Task creation errors propagate instead of reporting enabled"); }

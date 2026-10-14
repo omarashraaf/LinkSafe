@@ -23,7 +23,6 @@ builder.Services.AddSingleton<FolderMappingService>();
 builder.Services.AddSingleton<ClientApiService>();
 builder.Services.AddSingleton<BackupPackageBuilder>();
 builder.Services.AddSingleton<BackupStateService>();
-builder.Services.AddSingleton<RoamingRestorePromptService>();
 builder.Services.AddSingleton<BackupCoordinator>();
 builder.Services.AddSingleton<RemoteBackupInbox>();
 builder.Services.AddHostedService<RemoteBackupWorker>();
@@ -31,9 +30,6 @@ builder.Services.AddHostedService<DriveInventoryWorker>();
 builder.Services.AddHostedService<Worker>();
 
 using var host = builder.Build();
-host.Services.GetRequiredService<BackupCoordinator>().SkipStartupRestorePrompt = args.Any(arg =>
-    arg.Equals("--skip-restore-prompt", StringComparison.OrdinalIgnoreCase) ||
-    arg.Equals("--skip-restore-prompt=true", StringComparison.OrdinalIgnoreCase));
 
 if (args.Contains("--backup-now", StringComparer.OrdinalIgnoreCase))
 {

@@ -20,8 +20,7 @@ internal static class Program
         form.Show();
         var status = new StatusFileModel { ServerReachable = true, AgentEnabled = true, Registered = true,
             LastSuccessfulBackup = new DateTimeOffset(2026, 9, 9, 16, 0, 0, TimeSpan.FromHours(3)),
-            LastOperationStatus = "NoChanges", LastOperationMessage = "No new or changed files were found.",
-            AskBeforeRestoreEveryTime = true };
+            LastOperationStatus = "NoChanges", LastOperationMessage = "No new or changed files were found." };
         var config = new ClientAgentConfig { BackupFolders = ["Desktop", "Documents", "Downloads", "AppDataRoaming"], CustomFolders = [@"D:\Projects", @"E:\Accounts"] };
         Invoke("UpdateStatusLabel", status, config);
         Field<TextBox>("_serverUrlTextBox").Text = "http://10.0.0.102:5055";
@@ -34,6 +33,10 @@ internal static class Program
         Check(buttons.Count(b => b.Visible) == 4, "Only four actions are shown on the main screen");
         Check(buttons.Any(b => b.Text == "Choose folders"), "Folder selection action is visible");
         Check(Field<ContextMenuStrip>("_restoreMenu").Items.Count == 2, "Restore menu preserves restore and move-from-device options");
+        Check(!Descendants(form).OfType<CheckBox>().Any(checkBox => checkBox.Text.Contains("restore", StringComparison.OrdinalIgnoreCase)),
+            "No automatic restore preference is shown");
+        Check(Field<Label>("_restoreValue").Text.Contains("only when you choose it", StringComparison.OrdinalIgnoreCase),
+            "Restore details explain that restore is manual");
         Check(Field<Button>("_backupActionButton").Text == "Back up now", "Idle state offers backup, not Stop");
         Check(Field<Button>("_agentActionButton").Text == "Disable agent", "Enabled agent offers only Disable");
         Check(buttons.Where(b => b.Visible).Select(b => b.Height).Distinct().Count() == 1, "Main action heights match");

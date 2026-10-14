@@ -4,7 +4,7 @@ The server provides a manifest at `GET /api/restore/manifest`. The client compar
 
 Downloads are written to unique temporary files beside their destinations, size-checked, and moved into place without overwrite. Files created locally after comparison are preserved. Truncated/failed/cancelled downloads do not leave partially restored destination files. Per-file failures are reported and do not stop unrelated files; the next comparison retries only files still absent. The UI displays file/byte progress and a result count, not success on partial failure.
 
-Manual Restore Data can discover the current PC's own backup as well as other PCs for the same claimed account. The previously selected roaming source is preferred, then another device, then this PC. The confirmation identifies the chosen source. This does not merge multiple device snapshots. Automatic logon restore still uses another device, but compares on every logon even when the server backup timestamp has not changed.
+Manual Restore Data can discover the current PC's own backup as well as other PCs for the same claimed account. The previously selected source is preferred, then another device, then this PC. The confirmation identifies the chosen source. This does not merge multiple device snapshots. Startup and login do not discover, prompt for, or run restore; restore starts only from the client app.
 
 User-folder backups go to the current Windows user's known folder paths. Additional-drive paths are restored only when they map to the client's enabled custom/drive source paths. Missing mappings, inaccessible destinations, links/junctions, and protected system/LinkSafe storage paths are reported rather than guessed or silently overwritten. Empty directories are not included in the file manifest. The manifest is limited to 200,000 files; an oversized manifest fails explicitly.
 
@@ -21,4 +21,4 @@ The new clients deliberately do not fall back to the old overwrite-all ZIP resto
 Build the server in Release first, then run `dotnet run --project Tests/RestoreFlowChecks/RestoreFlowChecks.csproj -c Release`.
 The test injects a fixture registry and uses the real server manifest/file services through an in-memory HTTP handler. It does not contact the running server, invoke a real restore, or touch production profiles, backups or config. Tests cover comparison-only discovery, missing files across user folders and an enabled additional source, preserved existing/local-only files, concurrent creation, truncation, retries, zero-byte files, progress, path traversal, server changes, and cancellation. The symbolic-link fixture is skipped if Windows denies the required privilege; execution/security policies are not changed.
 
-Real Windows logon prompts and a restore on the affected PC still require acceptance testing after installation.
+A manual restore on the affected PC still requires acceptance testing after installation.

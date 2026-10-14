@@ -5,6 +5,11 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Contains("--gpo-install", StringComparer.Ordinal))
+        {
+            Environment.ExitCode = GpoDeployment.Run(args);
+            return;
+        }
         ApplicationConfiguration.Initialize();
         try { Shared.Storage.ClientWorkspace.EnsureCreated(); LegacyClientMigration.SeedServerAddress(); }
         catch (Exception ex)

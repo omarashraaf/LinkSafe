@@ -68,6 +68,9 @@ public sealed class AgentStartupTask(Func<string[], Task<SchedulerResult>>? exec
         var settings = task.Element(Ns + "Settings");
         string? Value(XElement? node, string name) => node?.Element(Ns + name)?.Value;
         void Require(bool condition, string message) { if (!condition) throw new InvalidDataException(message); }
+        Require(task.Element(Ns + "Principals")?.Elements().Count() == 1 &&
+            task.Element(Ns + "Triggers")?.Elements().Count() == 1 && trigger is not null,
+            "Startup must contain exactly one principal and one user logon trigger.");
         Require(SameUser(Value(principal, "UserId"), sid, resolveAccount) && SameUser(Value(trigger, "UserId"), sid, resolveAccount), "Startup is not bound to this Windows user's login, or its account could not be resolved.");
         // Task Scheduler omits default-valued elements when exporting registered tasks.
         Require(Value(principal, "LogonType") == "InteractiveToken" && (Value(principal, "RunLevel") ?? "LeastPrivilege") == "LeastPrivilege", "Startup must run in the user's normal interactive session.");
@@ -103,6 +106,12 @@ public sealed class AgentStartupTask(Func<string[], Task<SchedulerResult>>? exec
             var command = root?.Element(Ns + "Actions")?.Element(Ns + "Exec")?.Element(Ns + "Command")?.Value.Trim('"');
             if (!string.Equals(command, executable, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidOperationException("The existing startup task points to a different installation. Ask your administrator to resolve it; it was not replaced.");
+            try
+            {
+                Validate(existing.Output, executable, sid, resolveAccount);
+                return;
+            }
+            catch (InvalidDataException) { } // Repair only an owned task whose settings actually differ.
         }
         var temporary = Path.Combine(Path.GetTempPath(), "LinkSafe-startup-" + Guid.NewGuid().ToString("N") + ".xml");
         try

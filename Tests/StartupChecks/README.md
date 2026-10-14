@@ -20,7 +20,7 @@ The previous client ignored the exit code from an elevated `schtasks /Create` ca
 2. Run the new client as the Windows user whose files should be backed up, and click Enable agent. For an older elevated agent/task, a one-time run as administrator under **the same account** may be needed. The client does not silently install under an alternate administrator account or replace another user's task.
 3. Confirm the client shows Startup task verified. If permissions or organization policy deny task registration, resolve that reported error; do not assume the enabled preference means startup is installed.
 4. Sign out/in on a test device. Confirm Task Scheduler's LinkSafe Client Agent task runs for that user, and the agent log contains an agent start and logon backup scan. Test with battery power and with the network initially disconnected. The agent has no console/client window at login; the client UI/tray is opened separately.
-5. Verify a deliberately created small test file is backed up. A pre-existing Stop backup pause still persists; click Back up now to resume. A pending interactive restore prompt may need an answer before the startup scan proceeds.
+5. Verify a deliberately created small test file is backed up. A pre-existing Stop backup pause still persists; click Back up now to resume. Login startup must not display or wait for a restore prompt.
 
 No reboot, live task repair, actual affected-PC upgrade, or live backup was initiated during this verification. The locally inspected machine already reported the agent running after its latest restart and a later successful upload, so absence of a visible client window alone is not proof of startup failure.
 

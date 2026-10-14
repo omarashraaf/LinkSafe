@@ -16,14 +16,12 @@ public sealed partial class MainForm : Form
 {
     private const string DefaultServerUrl = LinkSafeDefaults.DefaultServerUrl;
     private static readonly TimeSpan RestoreDiscoveryPromptTimeout = TimeSpan.FromSeconds(12);
-    private static readonly TimeSpan RestoreDiscoveryBackgroundTimeout = TimeSpan.FromSeconds(5);
     private static readonly string AgentInstallDirectory = Path.Combine(LinkSafeDefaults.ClientDataRoot, "bin");
     private static readonly Regex GeneratedSetupNameRegex =
         new(@"^LinkSafeClientSetup-(?<host>.+)-p(?<port>\d+)\.exe$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     private readonly JsonFileStore<ClientAgentConfig> _configStore = new(LinkSafeDefaults.ClientConfigPath);
     private readonly JsonFileStore<StatusFileModel> _statusStore = new(LinkSafeDefaults.ClientStatusPath);
     private readonly TextBox _serverUrlTextBox = new() { Dock = DockStyle.Fill };
-    private readonly CheckBox _askBeforeRestoreCheckBox = new() { Text = "Ask every time before restoring data", AutoSize = true, Checked = true };
     private readonly Label _statusLabel = new() { Dock = DockStyle.Fill, AutoSize = false, Height = 160 };
     private readonly ProgressBar _progressBar = new() { Dock = DockStyle.Fill, Style = ProgressBarStyle.Marquee, Visible = false };
     private readonly Label _progressLabel = new() { Dock = DockStyle.Fill, AutoSize = true, Visible = false };
@@ -57,8 +55,6 @@ public sealed partial class MainForm : Form
             if (uninstallAtStartup) await UninstallClientAsync();
         };
 
-        _askBeforeRestoreCheckBox.CheckedChanged += async (_, _) => await SaveRestorePreferenceAsync();
-
         _refreshTimer.Tick += async (_, _) => { try { await RefreshStatusAsync(); } catch { } };
         Load += async (_, _) =>
         {
@@ -67,7 +63,6 @@ public sealed partial class MainForm : Form
             if (!startInTray) await UpdateInstalledWindowAsync();
             if (!startInTray) await CheckInstalledAgentOnOpenAsync();
             _refreshTimer.Start();
-            if (!startInTray) _ = CheckRestoreDataInBackgroundAsync();
         };
         FormClosing += OnFormClosing;
     }
@@ -147,15 +142,12 @@ public sealed partial class MainForm : Form
         }
     }
 
-    private async Task RestoreDataAsync(bool promptIfMissing, bool forcePrompt, bool fromAnotherDevice = false)
+    private async Task RestoreDataAsync(bool fromAnotherDevice = false)
     {
         if (_restoreRequested || _backupRequested) return;
         _restoreRequested = true;
         _restoreCancellation = new CancellationTokenSource();
-        if (promptIfMissing || forcePrompt)
-        {
-            ShowProgress("Checking for available restore data...");
-        }
+        ShowProgress("Checking for available restore data...");
 
         try
         {
@@ -172,10 +164,10 @@ public sealed partial class MainForm : Form
             using var discoveryClient = new HttpClient
             {
                 BaseAddress = new Uri(serverUrl),
-                Timeout = forcePrompt ? RestoreDiscoveryPromptTimeout : RestoreDiscoveryBackgroundTimeout
+                Timeout = RestoreDiscoveryPromptTimeout
             };
             var query =
-                $"api/restore/options?domainUser={Uri.EscapeDataString(identity.DomainUser)}&computerName={Uri.EscapeDataString(identity.ComputerName)}&includeCurrentComputer={(forcePrompt && !fromAnotherDevice).ToString().ToLowerInvariant()}";
+                $"api/restore/options?domainUser={Uri.EscapeDataString(identity.DomainUser)}&computerName={Uri.EscapeDataString(identity.ComputerName)}&includeCurrentComputer={(!fromAnotherDevice).ToString().ToLowerInvariant()}";
             var options = await discoveryClient.GetFromJsonAsync<RoamingRestoreOptionsResponse>(query, _restoreCancellation.Token);
             var candidate = options?.Candidates
                 .OrderByDescending(item => item.SourceComputerName.Equals(status.AutoRestoreSourceComputer, StringComparison.OrdinalIgnoreCase))
@@ -193,18 +185,7 @@ public sealed partial class MainForm : Form
 
             if (candidate is null)
             {
-                if (promptIfMissing)
-                {
-                    ShowCompleted("No backup source was found for this user.");
-                }
-
-                return;
-            }
-
-            if (!forcePrompt &&
-                (status.LastRestoreAt is not null ||
-                 candidate.SourceComputerName.Equals(status.LastRestorePromptSourceComputer, StringComparison.OrdinalIgnoreCase)))
-            {
+                ShowCompleted("No backup source was found for this user.");
                 return;
             }
 
@@ -226,12 +207,12 @@ public sealed partial class MainForm : Form
                 $"{Environment.NewLine}{Environment.NewLine}{plan.Missing.Count:N0} files are missing; {plan.Existing:N0} files already exist and will NOT be replaced." +
                 $"{Environment.NewLine}{plan.Warnings.Count:N0} comparison warnings. Restore only the missing files now?";
 
-            if (fromAnotherDevice || !forcePrompt)
+            if (fromAnotherDevice)
                 promptMessage = DeviceMigration.Preview(identity.DomainUser, candidate.SourceComputerName, plan, roots);
 
             var dialogResult = MessageBox.Show(
                 promptMessage,
-                fromAnotherDevice || !forcePrompt ? "Move data to this device" : "LinkSafe Restore",
+                fromAnotherDevice ? "Move data to this device" : "LinkSafe Restore",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Question,
                 MessageBoxDefaultButton.Button1);
@@ -246,33 +227,15 @@ public sealed partial class MainForm : Form
                 return;
             }
 
-            status.AskBeforeRestoreEveryTime = _askBeforeRestoreCheckBox.Checked;
             await DownloadAndApplyRestoreAsync(restoreClient, plan, candidate, _restoreCancellation.Token);
             await RefreshStatusAsync();
         }
         catch (OperationCanceledException) when (_allowClose) { }
-        catch (TaskCanceledException) when (!promptIfMissing && !forcePrompt)
-        {
-            ShowCompleted("Restore check will continue when the server responds.");
-        }
         catch (Exception ex)
         {
             ShowError($"Restore failed: {ex.Message}");
         }
         finally { _restoreRequested = false; _restoreCancellation.Dispose(); _restoreCancellation = null; UpdateActionButtons(); }
-    }
-
-    private async Task CheckRestoreDataInBackgroundAsync()
-    {
-        try
-        {
-            await Task.Delay(400);
-            await RestoreDataAsync(promptIfMissing: false, forcePrompt: false);
-        }
-        catch
-        {
-            // Keep startup non-blocking even if restore discovery fails.
-        }
     }
 
     private async Task DisableAgentAsync()
@@ -460,8 +423,6 @@ public sealed partial class MainForm : Form
         {
             _serverUrlTextBox.Focus();
         }
-        var status = await _statusStore.LoadAsync(() => new StatusFileModel());
-        _askBeforeRestoreCheckBox.Checked = status.AskBeforeRestoreEveryTime;
         await RefreshStatusAsync();
     }
 
@@ -513,10 +474,6 @@ public sealed partial class MainForm : Form
         var restoreStatus = status.LastRestoreAt is null
             ? "Never"
             : $"{status.LastRestoreAt.Value.ToLocalTime():g} from {status.LastRestoreSourceComputer}";
-        var autoRestoreStatus = status.AutoRestoreEnabled
-            ? $"Enabled from {status.AutoRestoreSourceComputer}"
-            : "Disabled";
-        var restorePromptMode = status.AskBeforeRestoreEveryTime ? "Ask every time" : "Restore automatically";
 
         _connectionValue.Text = connected;
         _connectionValue.ForeColor = status.ServerReachable ? Accent : Warning;
@@ -526,7 +483,7 @@ public sealed partial class MainForm : Form
         _foldersValue.Text = FriendlyFolders(selectedFolders);
         _drivesValue.Text = config.CustomFolders.Count > 2 ? $"{config.CustomFolders.Count} additional folders (see Choose folders)" : additionalFolders;
         _drivesValue.Visible = config.CustomFolders.Count > 0;
-        _restoreValue.Text = $"Last restore: {restoreStatus}\nRestore sync: {autoRestoreStatus}\nPrompt: {restorePromptMode}";
+        _restoreValue.Text = $"Last restore: {restoreStatus}\nRestore runs only when you choose it in this app.";
         _registrationValue.Text = status.Registered ? "Registered with your server" : "Registration completes in the background when the agent connects.";
         _errorValue.Text = status.LastError ?? string.Empty;
         _errorValue.Visible = !string.IsNullOrWhiteSpace(status.LastError);
@@ -810,14 +767,6 @@ public sealed partial class MainForm : Form
         return running;
     }
 
-    private async Task SaveRestorePreferenceAsync()
-    {
-        var status = await _statusStore.LoadAsync(() => new StatusFileModel());
-        status.AskBeforeRestoreEveryTime = _askBeforeRestoreCheckBox.Checked;
-        await _statusStore.WriteAsync(status);
-        await RefreshStatusAsync();
-    }
-
     private async Task DownloadAndApplyRestoreAsync(
         HttpClient client,
         MissingRestorePlan plan,
@@ -832,8 +781,7 @@ public sealed partial class MainForm : Form
             return Task.CompletedTask;
         }, cancellationToken);
         var status = await _statusStore.LoadAsync(() => new StatusFileModel());
-        status.AutoRestoreEnabled = true;
-        status.AskBeforeRestoreEveryTime = _askBeforeRestoreCheckBox.Checked;
+        status.AutoRestoreEnabled = false;
         status.AutoRestoreSourceComputer = candidate.SourceComputerName;
         if (result.Errors.Count == 0) status.LastRestoreAt = DateTimeOffset.UtcNow;
         status.LastRestoreSourceComputer = candidate.SourceComputerName;

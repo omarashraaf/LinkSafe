@@ -21,7 +21,7 @@ internal sealed class SetupForm : Form
 
     internal SetupForm()
     {
-        Text = "LinkSafe | Server Setup 1.0.20";
+        Text = "LinkSafe | Server Setup 1.0.21";
         Icon = Icon.ExtractAssociatedIcon(Environment.ProcessPath!);
         Font = new Font("Segoe UI", 10);
         ForeColor = Ink;

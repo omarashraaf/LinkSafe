@@ -35,7 +35,7 @@ public sealed class ClientApiService(IHttpClientFactory httpClientFactory)
             Username = identity.Username,
             Domain = identity.Domain,
             ComputerName = identity.ComputerName,
-            AgentVersion = "1.0.16",
+            AgentVersion = "1.0.17",
             AvailableDrives = availableDrives ?? FolderMappingService.GetAvailableDrives(),
             UsesLocalFolderSelection = config.UsesLocalFolderSelection,
             ReportedBackupFolders = config.BackupFolders,

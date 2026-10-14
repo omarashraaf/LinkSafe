@@ -233,7 +233,7 @@ try {
         if (-not $ownedInstall) { Protect-Directory $installRoot; Protect-Directory $dataRoot }
         $toolsDir = Join-Path $installRoot 'SetupTools'
         New-Item -ItemType Directory -Path $toolsDir -Force | Out-Null
-        Save-Json $markerPath @{ Product='LinkSafeServerSetup'; InstallRoot=$installRoot; Version='1.0.20' }
+        Save-Json $markerPath @{ Product='LinkSafeServerSetup'; InstallRoot=$installRoot; Version='1.0.21' }
         Copy-Item -LiteralPath $PSCommandPath -Destination (Join-Path $toolsDir 'Manage-LinkSafeServer.ps1') -Force
         if (-not $config) {
             Protect-Directory $BackupRoot
@@ -308,7 +308,7 @@ try {
         $helper = Join-Path $toolsDir 'Manage-LinkSafeServer.ps1'
         $ps = Join-Path $env:windir 'System32\WindowsPowerShell\v1.0\powershell.exe'
         New-Item -Path $registryPath -Force | Out-Null
-        $values = @{ DisplayName='LinkSafe Server'; DisplayVersion='1.0.20'; Publisher='LinkSafe'; InstallLocation=$installRoot; UninstallString="`"$ps`" -NoProfile -File `"$helper`" -Mode Uninstall" }
+        $values = @{ DisplayName='LinkSafe Server'; DisplayVersion='1.0.21'; Publisher='LinkSafe'; InstallLocation=$installRoot; UninstallString="`"$ps`" -NoProfile -File `"$helper`" -Mode Uninstall" }
         foreach ($key in $values.Keys) { New-ItemProperty -Path $registryPath -Name $key -Value $values[$key] -PropertyType String -Force | Out-Null }
         New-ItemProperty -Path $registryPath -Name NoModify -Value 1 -PropertyType DWord -Force | Out-Null
         New-ItemProperty -Path $registryPath -Name NoRepair -Value 1 -PropertyType DWord -Force | Out-Null

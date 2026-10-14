@@ -11,7 +11,6 @@ public sealed class BackupCoordinator(
     QueueStore queueStore,
     ClientIdentityService identityService,
     ClientApiService apiService,
-    RoamingRestorePromptService roamingRestorePromptService,
     BackupPackageBuilder packageBuilder,
     BackupStateService backupStateService,
     FolderMappingService folderMappingService,
@@ -24,8 +23,6 @@ public sealed class BackupCoordinator(
     private const int MaxPackagesPerBackupRun = 64;
     private string _activeRequestId = string.Empty;
     private string _interruptedRequestId = string.Empty;
-    public bool SkipStartupRestorePrompt { get; set; }
-
     public async Task RunAsync(CancellationToken cancellationToken)
     {
         Directory.CreateDirectory(LinkSafeDefaults.ClientQueueDirectory);
@@ -37,7 +34,6 @@ public sealed class BackupCoordinator(
         await statusService.SaveAsync(status, cancellationToken);
 
         var config = await EnsureRegistrationAndPolicyAsync(cancellationToken);
-        if (!SkipStartupRestorePrompt) await TryOfferRoamingRestoreAsync(config, cancellationToken);
         StartWatchers(config);
         var scannedPolicy = ClientPolicyStore.ScanKey(config);
         var watchedRoots = WatcherRootsKey(config);
@@ -915,18 +911,6 @@ public sealed class BackupCoordinator(
         {
             if (cancellationToken.IsCancellationRequested) _interruptedRequestId = _activeRequestId;
             _activeRequestId = string.Empty;
-        }
-    }
-
-    private async Task TryOfferRoamingRestoreAsync(ClientAgentConfig config, CancellationToken cancellationToken)
-    {
-        try
-        {
-            await roamingRestorePromptService.OfferRestoreIfNeededAsync(config, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            logger.LogWarning(ex, "Roaming restore prompt could not be completed.");
         }
     }
 

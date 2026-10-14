@@ -2,22 +2,28 @@
 
 Windows user-data backup with an ASP.NET Core admin website/API, a silent per-user agent, and a WinForms client. Clients upload to the server; they do not write directly to an SMB backup share. This README is the current operating guide and handoff for another developer or coding agent.
 
-**Current source versions:** server and server installer **1.0.20**; client setup and background agent **1.0.16**. Projects target **.NET 10** and Windows x64 (Shared targets `net10.0`). A built EXE, installed service and installed client can have different versions. Building or pushing Git does not deploy them.
+**Current source versions:** server **1.0.20**, server installer **1.0.21**, client setup **1.0.18** and background agent **1.0.17**. Projects target **.NET 10** and Windows x64 (Shared targets `net10.0`). A built EXE, installed service and installed client can have different versions. Building or pushing Git does not deploy them.
 
 > **Trusted-LAN MVP, not production-hardened.** The admin website requires cookie login, but client controllers currently trust claimed account/device identities and do not enforce the originally requested registration token. This includes restore access. NTFS protection does not fix API impersonation. Do not expose this service to the Internet or an untrusted LAN. Authenticated enrollment, device/user authorization and HTTPS are priority work before production use.
 
 ## Start Here
 
 - Operators: read [Server Setup Guide](Installer/README.md), then installation, backup and restore below.
+- Domain rollout: [GPO deployment guide](docs/GPO-Deployment.md) covers the unattended kit, read-only software share, user logon GPO, pilot checks and one-time default folders + non-C fixed drives selection. `Scripts/Build-LinkSafeGpoPackage.ps1` now requires signing-certificate/timestamp parameters for distribution; unsigned output needs the explicit development switch. It signs both EXEs and the script before hashing into a new versioned output folder. The server installer/Downloads templates are not automatically signed or updated. Signing is not antivirus approval; the TRADE02 detection still needs vendor review and a clean pilot.
 - Coding agents: read [AGENTS.md](AGENTS.md), this README, relevant source and corresponding tests before editing.
+- Current antivirus investigation: [September 14 review](docs/Antivirus-Review-20260914.md) identifies the signed tray UI as the detected process and records local integrity/startup fixes. The exact detection trigger and antivirus acceptance remain unverified; do not treat the source fixes as a cleared release.
 - Historical context: [development/release notes](docs/HISTORY.md) and dated test READMEs explain regressions; they are not the current deployment contract.
 
+**2026-09-14 deployment status: PAUSED.** At the owner's request, the domain-root link for `LinkSafe - Domain Client Deployment` was disabled and independently read back as `Enabled: False` after a new reported Bitdefender block on TRADE03. The GPO, signed kit (setup 1.0.17 / worker 1.0.16), read-only software share `\\OCDC01\LinkSafeDeploy$`, installed agents and backups were retained. Clients may retain cached deployment policy until refresh. Do not re-enable rollout or repeatedly reinstall the blocked package while investigation is open. Signing and the earlier single-user successful backup pilot did not establish antivirus acceptance across devices. No antivirus settings, backup-storage ACLs or Downloads templates were changed. See the GPO guide's pause record for evidence, audit paths and release criteria.
+
 ## How It Works
+
+**GPO cleanup (2026-09-14):** only `LinkSafe - Domain Client Deployment` now remains. Required machine certificate trust, user trusted-publisher and AllSigned settings were consolidated into it before deleting the legacy and pilot GPOs. Domain Computers also has Apply permission so workstation machine trust can process; Domain Users retains Apply and the workstation-only WMI filter remains. The pilot group/filter/share were removed. `\\OCDC01\LinkSafeDeploy$` still serves the same signed kit; its underlying folder's historical `Pilot` name does not mean pilot-only scope. Rollback archives, installed agents and backup data were retained. See the cleanup record in the GPO guide for verification and the empty, locked legacy SYSVOL directory left behind. Endpoint policy refresh and logon verification after consolidation remain outstanding.
 
 ```text
 Windows user logs in
   -> SID-bound scheduled task starts agent as that user
-  -> agent registers, refreshes policy and checks restore preferences
+  -> agent registers and refreshes backup policy
   -> startup scan compares local data/state with server presence
   -> new/changed or server-missing data becomes bounded ZIP uploads
   -> server validates/extracts into BackupRoot/user/computer
@@ -52,7 +58,7 @@ Clients supports individual actions and bulk selection (up to 200 PCs): backup r
 
 ### Restore / Move Data
 
-Use **Restore data** in the client. The move-from-another-device flow lets the same domain-qualified account choose a source computer, with its last backup shown. It does not merge all devices. Automatic restore prefers the saved source, otherwise an eligible recent source; first-run/logon behavior follows saved consent and **Ask every time before restoring**.
+Restore is manual only. Use **Restore data** in the client when you want to compare and recover missing data; startup, login, tray launch and normal app opening never prompt for or start a restore. The move-from-another-device flow lets the same domain-qualified account choose a source computer, with its last backup shown. It does not merge all devices.
 
 The client compares a server manifest with original destination paths, previews missing/existing counts, then copies **only missing files**. Existing files, even different versions, remain untouched. User folders map to the current user's known folders; app/browser files map to corresponding AppData locations. Drive/custom data requires an enabled valid local mapping; missing mappings produce warnings, not guessed destinations. Failed transfers do not leave partial destination files.
 

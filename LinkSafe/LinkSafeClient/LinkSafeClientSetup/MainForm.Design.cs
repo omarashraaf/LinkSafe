@@ -83,9 +83,6 @@ public sealed partial class MainForm
         AddRow(server, _policyValue);
         AddRow(server, _restoreValue);
         AddRow(server, _statusLabel);
-        _askBeforeRestoreCheckBox.Text = "Ask before restoring data";
-        _askBeforeRestoreCheckBox.Margin = new Padding(0, 8, 0, 12);
-        AddRow(server, _askBeforeRestoreCheckBox);
         var logs = new LinkLabel { Text = "Open logs", AccessibleName = "Open logs", AutoSize = true, LinkColor = Accent, Margin = new Padding(0, 4, 0, 0) };
         logs.LinkClicked += (_, _) => OpenLogs();
         AddRow(server, logs);
@@ -144,9 +141,9 @@ public sealed partial class MainForm
         _foldersButton = CreateButton("Choose folders", async (_, _) => await ChooseBackupFoldersAsync());
         _restoreButton = CreateButton("Restore data", (_, _) => _restoreMenu.Show(_restoreButton!, new Point(0, _restoreButton!.Height)));
         _restoreMenu.Items.Add("Restore missing files", null, async (_, _) =>
-        { if (CanRunAction("Restore data")) await RestoreDataAsync(promptIfMissing: true, forcePrompt: true); });
+        { if (CanRunAction("Restore data")) await RestoreDataAsync(); });
         _restoreMenu.Items.Add("Move data from another device", null, async (_, _) =>
-        { if (CanRunAction("Restore data")) await RestoreDataAsync(promptIfMissing: true, forcePrompt: true, fromAnotherDevice: true); });
+        { if (CanRunAction("Restore data")) await RestoreDataAsync(fromAnotherDevice: true); });
         sourceActions.Controls.Add(_foldersButton);
         sourceActions.Controls.Add(_restoreButton);
         AddRow(sources, sourceActions);

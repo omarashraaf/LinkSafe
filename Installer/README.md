@@ -1,6 +1,6 @@
 # LinkSafe Server Setup
 
-Current package: **server/installer 1.0.20**, bundling **client setup/agent 1.0.16**.
+Current package: **server 1.0.20 / installer 1.0.21**, bundling **client setup 1.0.18 / agent 1.0.17**.
 See the [root README](../README.md) for current behavior, security limitations and developer handoff.
 
 ## Recover from older setup errors
